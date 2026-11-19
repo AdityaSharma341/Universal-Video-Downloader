@@ -1,0 +1,77 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#111827"><title>VideoDrop - Universal Video Downloader</title><link rel="stylesheet" href="/style.css"></head><body>
+<main class="shell"><header class="top"><div class="logo">▶</div><div><b>Video<span>Drop</span></b><small>UNIVERSAL VIDEO DOWNLOADER</small></div><label class="status">● Ready</label></header>
+<section class="hero"><small>SAVE VIDEOS YOU'RE ALLOWED TO DOWNLOAD</small><h1>Your video.<br><em>Your device.</em></h1><p>Paste a supported video webpage link, choose a quality, and save it to your device.</p></section>
+
+<section class="panel"><label for="url">Video webpage URL</label>
+<div class="urlrow"><input id="url" type="url" placeholder="https://example.com/watch?..." autocomplete="url"><button id="detect">Detect video</button></div>
+<p class="hint">Use the webpage URL where the video is available.</p>
+<div class="cookie-row">
+  <label class="toggle"><input type="checkbox" id="useCookies"><span class="toggle-label">Use browser cookies</span></label>
+  <span class="hint">Enable for sites that need login, age check, or cookie consent.</span>
+</div>
+<div id="cookieOptions" class="cookie-options hide">
+  <div class="cookie-status" id="cookieStatus"></div>
+  <div class="cookie-methods">
+    <div class="method-card method-primary">
+      <h4>📁 Upload cookies.txt <span class="badge">Recommended</span></h4>
+      <p class="hint">Works on all Windows PCs. One-time setup per site.</p>
+      <div class="steps">
+        <div class="step"><span class="step-num">1</span><span>Install <a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc" target="_blank" rel="noopener">Get cookies.txt LOCALLY</a> in Chrome</span></div>
+        <div class="step"><span class="step-num">2</span><span>Visit the video site → complete age/cookie prompts</span></div>
+        <div class="step"><span class="step-num">3</span><span>Click the extension icon → <strong>Export</strong></span></div>
+        <div class="step"><span class="step-num">4</span><span>Upload the file here:</span></div>
+      </div>
+      <div class="upload-row">
+        <input type="file" id="cookieFile" accept=".txt" class="file-input">
+        <label for="cookieFile" class="file-label">Choose cookies.txt</label>
+        <button id="uploadCookies" disabled>Upload</button>
+      </div>
+      <div id="uploadStatus" class="hint"></div>
+    </div>
+    <div class="method-card">
+      <h4>🌐 Read from browser directly</h4>
+      <p class="hint">May fail on Chrome (Windows encryption issue). Works with Firefox.</p>
+      <div class="browser-row">
+        <label for="browserSelect" class="hint">Browser:</label>
+        <select id="browserSelect">
+          <option value="firefox">Firefox (Recommended)</option>
+          <option value="chrome">Chrome</option>
+          <option value="edge">Edge</option>
+          <option value="brave">Brave</option>
+        </select>
+      </div>
+      <p class="hint warn" id="chromeWarn">⚠️ Chrome on Windows blocks cookie access (App-Bound Encryption). Use Firefox or upload a cookie file instead.</p>
+    </div>
+  </div>
+</div>
+<div id="error" class="error hide"></div>
+</section>
+
+<section id="browserPrompt" class="panel hide"><div class="browser-prompt">
+<p><strong>⚠️ Could not read browser cookies</strong></p>
+<p id="browserError" class="hint"></p>
+<div class="method-card method-primary">
+  <h4>📁 Upload cookies.txt — the reliable fix</h4>
+  <div class="steps">
+    <div class="step"><span class="step-num">1</span><span>Install <a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc" target="_blank" rel="noopener">Get cookies.txt LOCALLY</a> in Chrome</span></div>
+    <div class="step"><span class="step-num">2</span><span>Go to the video page → complete all prompts (age, cookies)</span></div>
+    <div class="step"><span class="step-num">3</span><span>Click the extension icon → <strong>Export</strong></span></div>
+    <div class="step"><span class="step-num">4</span><span>Upload it here, then click <strong>"Retry detection"</strong></span></div>
+  </div>
+  <div class="upload-row">
+    <input type="file" id="cookieFile2" accept=".txt" class="file-input">
+    <label for="cookieFile2" class="file-label">Choose cookies.txt</label>
+    <button id="uploadCookies2" disabled>Upload & retry</button>
+  </div>
+  <div id="uploadStatus2" class="hint"></div>
+</div>
+</div></section>
+
+<section id="preview" class="panel hide"><div class="preview"><img id="thumb" alt="Video thumbnail"><div><small>VIDEO FOUND</small><h2 id="title"></h2><p id="details" class="hint"></p></div></div><div class="quality"><div><label for="quality">Download quality</label><select id="quality"><option value="best">Best available</option><option value="1080">Up to 1080p</option><option value="720">Up to 720p</option><option value="480">Up to 480p</option><option value="360">Up to 360p</option></select></div><button id="download">Download video</button></div></section>
+
+<section id="progress" class="panel hide"><div class="progresshead"><b id="state">Downloading</b><b id="percent">0%</b></div><div class="track"><div id="bar"></div></div><p id="message" class="hint">Waiting...</p><a id="save" class="button hide">Save to this device</a></section>
+
+<footer>Downloads are processed on the computer running this server. The browser chooses where the file is saved.<br>Only download content you own or are authorized to save. DRM and access restrictions are not bypassed.</footer></main>
+
+<dialog id="tokenDialog"><form method="dialog"><h3>Network access token</h3><p class="hint">Enter the token configured on the laptop.</p><input id="token" type="password" placeholder="Access token"><button>Continue</button></form></dialog>
+<script src="/app.js"></script></body></html>
