@@ -1,5 +1,6 @@
 package com.example.videodownloader.service;
 
+import com.example.videodownloader.dto.SystemCheckResponse;
 import com.example.videodownloader.model.DownloadJob;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -68,6 +70,42 @@ public class VideoDownloadService {
             return Files.deleteIfExists(cookieFilePath);
         } catch (IOException e) {
             return false;
+        }
+    }
+
+    public SystemCheckResponse checkDiagnostics() {
+        var ytdlpStatus = checkTool(List.of(ytDlpPath, "--version"), ytDlpPath);
+        var ffmpegStatus = checkTool(List.of("ffmpeg", "-version"), "ffmpeg");
+
+        File rootFile = downloadRoot.toFile();
+        var diskStatus = new SystemCheckResponse.DiskStatus(
+                rootFile.getUsableSpace(),
+                rootFile.getTotalSpace(),
+                downloadRoot.toString()
+        );
+
+        boolean healthy = ytdlpStatus.available() && ffmpegStatus.available();
+        return new SystemCheckResponse(healthy, ytdlpStatus, ffmpegStatus, diskStatus);
+    }
+
+    private SystemCheckResponse.ToolStatus checkTool(List<String> command, String path) {
+        try {
+            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+            String output;
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                output = reader.readLine();
+            }
+            boolean finished = process.waitFor(5, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                return new SystemCheckResponse.ToolStatus(false, null, path, "Execution timed out");
+            }
+            if (process.exitValue() == 0 && output != null) {
+                return new SystemCheckResponse.ToolStatus(true, output.trim(), path, null);
+            }
+            return new SystemCheckResponse.ToolStatus(false, null, path, "Process exited with code " + process.exitValue());
+        } catch (Exception e) {
+            return new SystemCheckResponse.ToolStatus(false, null, path, e.getMessage());
         }
     }
 

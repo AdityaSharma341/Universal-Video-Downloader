@@ -57,6 +57,7 @@ The backend exposes the following REST endpoints under `/api`:
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/config` | Retrieves runtime configuration (token requirement status, cookie file state). |
+| `GET` | `/api/system-check` | Performs diagnostics verifying availability of yt-dlp, FFmpeg, and storage space. |
 | `POST` | `/api/info` | Fetches metadata (title, uploader, thumbnail, formats) for a given video URL. |
 | `POST` | `/api/download` | Initiates asynchronous background download job for a video and selected quality. |
 | `DELETE` | `/api/download/{id}` | Cancels an ongoing background download job. |

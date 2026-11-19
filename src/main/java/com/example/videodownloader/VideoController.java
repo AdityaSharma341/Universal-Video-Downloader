@@ -46,6 +46,12 @@ public class VideoController {
         );
     }
 
+    @GetMapping("/system-check")
+    public SystemCheckResponse systemCheck(HttpServletRequest http) {
+        authorize(http.getHeader("X-App-Token"));
+        return downloadService.checkDiagnostics();
+    }
+
     @PostMapping("/info")
     public Map<String, Object> info(@RequestBody UrlRequest request, HttpServletRequest http) throws Exception {
         authorize(http.getHeader("X-App-Token"));
