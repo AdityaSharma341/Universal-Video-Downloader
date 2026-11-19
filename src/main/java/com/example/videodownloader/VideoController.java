@@ -65,6 +65,16 @@ public class VideoController {
         return Map.of("jobId", id);
     }
 
+    @DeleteMapping("/download/{id}")
+    public Map<String, Object> cancel(@PathVariable String id, HttpServletRequest http) {
+        authorize(http.getHeader("X-App-Token"));
+        boolean cancelled = downloadService.cancelJob(id);
+        if (!cancelled) {
+            throw new ResponseStatusException(BAD_REQUEST, "Job cannot be cancelled or was not found.");
+        }
+        return Map.of("status", "cancelled", "message", "Download cancelled successfully.");
+    }
+
     @GetMapping("/status/{id}")
     public JobStatusResponse status(@PathVariable String id, HttpServletRequest http) {
         authorize(http.getHeader("X-App-Token"));

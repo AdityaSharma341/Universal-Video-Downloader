@@ -75,6 +75,23 @@ public class VideoDownloadService {
         return Optional.ofNullable(jobs.get(id));
     }
 
+    public boolean cancelJob(String id) {
+        DownloadJob job = jobs.get(id);
+        if (job == null) {
+            return false;
+        }
+        if ("downloading".equals(job.getState()) || "processing".equals(job.getState()) || "queued".equals(job.getState())) {
+            Process proc = job.getProcess();
+            if (proc != null && proc.isAlive()) {
+                proc.destroyForcibly();
+            }
+            job.setState("cancelled");
+            job.setMessage("Download was cancelled by the user.");
+            return true;
+        }
+        return false;
+    }
+
     public Map<String, Object> fetchVideoInfo(String url, boolean useCookies, String browser) throws Exception {
         List<String> command = new ArrayList<>(List.of(ytDlpPath, "--dump-single-json", "--no-warnings", "--no-playlist"));
         if (useCookies) {

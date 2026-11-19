@@ -59,6 +59,7 @@ The backend exposes the following REST endpoints under `/api`:
 | `GET` | `/api/config` | Retrieves runtime configuration (token requirement status, cookie file state). |
 | `POST` | `/api/info` | Fetches metadata (title, uploader, thumbnail, formats) for a given video URL. |
 | `POST` | `/api/download` | Initiates asynchronous background download job for a video and selected quality. |
+| `DELETE` | `/api/download/{id}` | Cancels an ongoing background download job. |
 | `GET` | `/api/status/{id}` | Checks progress and status of a download job. |
 | `GET` | `/api/file/{id}` | Streams the completed video file as an attachment to the client. |
 | `POST` | `/api/upload-cookies` | Accepts and validates a Netscape format `cookies.txt` file for authenticated downloads. |
