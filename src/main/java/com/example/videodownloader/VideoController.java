@@ -1,5 +1,6 @@
 package com.example.videodownloader;
 
+import com.example.videodownloader.dto.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
@@ -55,12 +56,8 @@ public class VideoController {
     }
 
     @GetMapping("/config")
-    public Map<String, Object> config() {
-        Map<String, Object> cfg = new LinkedHashMap<>();
-        cfg.put("tokenRequired", !accessToken.isBlank());
-        cfg.put("hasCookieFile", Files.isRegularFile(cookieFilePath));
-        cfg.put("cookieFilePath", cookieFilePath.toString());
-        return cfg;
+    public ConfigResponse config() {
+        return new ConfigResponse(!accessToken.isBlank(), Files.isRegularFile(cookieFilePath), cookieFilePath.toString());
     }
 
     @PostMapping("/info")
@@ -135,13 +132,10 @@ public class VideoController {
     }
 
     @GetMapping("/status/{id}")
-    public Map<String, Object> status(@PathVariable String id, HttpServletRequest http) {
+    public JobStatusResponse status(@PathVariable String id, HttpServletRequest http) {
         authorize(http.getHeader("X-App-Token"));
         DownloadJob job = getJob(id);
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("state", job.state); result.put("percent", job.percent);
-        result.put("message", job.message); result.put("filename", job.filename);
-        return result;
+        return new JobStatusResponse(job.state, job.percent, job.message, job.filename);
     }
 
     @GetMapping("/file/{id}")
@@ -309,9 +303,6 @@ public class VideoController {
         if (message == null || message.isBlank()) return "The operation failed. Check the URL and try again.";
         return message.length() > 450 ? message.substring(0, 450) : message;
     }
-
-    public record UrlRequest(String url, boolean useCookies, String browser) { }
-    public record DownloadRequest(String url, String quality, boolean useCookies, String browser) { }
 
     private static class DownloadJob {
         final String id;
