@@ -3,6 +3,7 @@ package com.example.videodownloader;
 import com.example.videodownloader.dto.*;
 import com.example.videodownloader.model.DownloadJob;
 import com.example.videodownloader.service.VideoDownloadService;
+import com.example.videodownloader.util.UrlValidator;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
@@ -55,19 +56,17 @@ public class VideoController {
     @PostMapping("/info")
     public Map<String, Object> info(@RequestBody UrlRequest request, HttpServletRequest http) throws Exception {
         authorize(http.getHeader("X-App-Token"));
-        String url = validateUrl(request.url());
-        return downloadService.fetchVideoInfo(url, request.useCookies(), request.browser());
+        String url = UrlValidator.validateAndNormalizeUrl(request.url());
+        return downloadService.fetchVideoInfo(url, request.useCookies(), UrlValidator.sanitizeBrowser(request.browser()));
     }
 
     @PostMapping("/download")
     public Map<String, String> start(@RequestBody DownloadRequest request, HttpServletRequest http) {
         authorize(http.getHeader("X-App-Token"));
-        String url = validateUrl(request.url());
-        String quality = request.quality() == null ? "best" : request.quality();
-        if (!Set.of("best", "360", "480", "720", "1080", "1440", "2160").contains(quality)) {
-            throw new ResponseStatusException(BAD_REQUEST, "Unsupported quality selection.");
-        }
-        String id = downloadService.submitDownloadJob(url, quality, request.useCookies(), request.browser());
+        String url = UrlValidator.validateAndNormalizeUrl(request.url());
+        String quality = UrlValidator.validateQuality(request.quality());
+        String browser = UrlValidator.sanitizeBrowser(request.browser());
+        String id = downloadService.submitDownloadJob(url, quality, request.useCookies(), browser);
         return Map.of("jobId", id);
     }
 
@@ -108,8 +107,8 @@ public class VideoController {
     @PostMapping("/open-browser")
     public Map<String, String> openBrowser(@RequestBody UrlRequest request, HttpServletRequest http) {
         authorize(http.getHeader("X-App-Token"));
-        String url = validateUrl(request.url());
-        String browser = request.browser() != null ? request.browser() : "chrome";
+        String url = UrlValidator.validateAndNormalizeUrl(request.url());
+        String browser = UrlValidator.sanitizeBrowser(request.browser());
         try {
             String exe = switch (browser) {
                 case "firefox" -> "firefox";
