@@ -3,3 +3,5 @@ target/
 *.iml
 downloads/*
 !downloads/.gitkeep
+
+cookies.txt
