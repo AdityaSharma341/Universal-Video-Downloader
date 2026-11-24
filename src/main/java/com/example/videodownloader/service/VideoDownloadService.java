@@ -1,6 +1,7 @@
 package com.example.videodownloader.service;
 
 import com.example.videodownloader.dto.SystemCheckResponse;
+import com.example.videodownloader.dto.VideoInfoResponse;
 import com.example.videodownloader.model.DownloadJob;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,10 +30,14 @@ public class VideoDownloadService {
 
     private static final Pattern PERCENT = Pattern.compile("(\\d{1,3}(?:\\.\\d+)?)%");
     private static final Set<String> SUPPORTED_BROWSERS = Set.of("chrome", "firefox", "edge", "brave", "opera", "vivaldi");
+    private static final List<String> FALLBACK_BROWSERS = List.of("firefox", "edge", "chrome", "brave", "opera", "vivaldi");
+
+    /** Number of concurrent fragment downloads for speed. */
+    private static final int CONCURRENT_FRAGMENTS = 8;
 
     private final ObjectMapper mapper = new ObjectMapper();
     private final ConcurrentMap<String, DownloadJob> jobs = new ConcurrentHashMap<>();
-    private final ExecutorService executor = Executors.newFixedThreadPool(2);
+    private final ExecutorService executor = Executors.newFixedThreadPool(4);
 
     private final Path downloadRoot;
     private final String ytDlpPath;
@@ -49,41 +54,25 @@ public class VideoDownloadService {
                 : this.downloadRoot.resolve("cookies.txt");
     }
 
-    public Path getDownloadRoot() {
-        return downloadRoot;
-    }
-
-    public Path getCookieFilePath() {
-        return cookieFilePath;
-    }
-
-    public boolean hasCookieFile() {
-        return Files.isRegularFile(cookieFilePath);
-    }
+    public Path getDownloadRoot() { return downloadRoot; }
+    public Path getCookieFilePath() { return cookieFilePath; }
+    public boolean hasCookieFile() { return Files.isRegularFile(cookieFilePath); }
 
     public void saveCookies(byte[] content) throws IOException {
         Files.write(cookieFilePath, content);
     }
 
     public boolean deleteCookies() {
-        try {
-            return Files.deleteIfExists(cookieFilePath);
-        } catch (IOException e) {
-            return false;
-        }
+        try { return Files.deleteIfExists(cookieFilePath); }
+        catch (IOException e) { return false; }
     }
 
     public SystemCheckResponse checkDiagnostics() {
         var ytdlpStatus = checkTool(List.of(ytDlpPath, "--version"), ytDlpPath);
         var ffmpegStatus = checkTool(List.of("ffmpeg", "-version"), "ffmpeg");
-
         File rootFile = downloadRoot.toFile();
         var diskStatus = new SystemCheckResponse.DiskStatus(
-                rootFile.getUsableSpace(),
-                rootFile.getTotalSpace(),
-                downloadRoot.toString()
-        );
-
+                rootFile.getUsableSpace(), rootFile.getTotalSpace(), downloadRoot.toString());
         boolean healthy = ytdlpStatus.available() && ffmpegStatus.available();
         return new SystemCheckResponse(healthy, ytdlpStatus, ffmpegStatus, diskStatus);
     }
@@ -92,111 +81,240 @@ public class VideoDownloadService {
         try {
             Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
             String output;
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
                 output = reader.readLine();
             }
             boolean finished = process.waitFor(5, TimeUnit.SECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                return new SystemCheckResponse.ToolStatus(false, null, path, "Execution timed out");
-            }
-            if (process.exitValue() == 0 && output != null) {
-                return new SystemCheckResponse.ToolStatus(true, output.trim(), path, null);
-            }
+            if (!finished) { process.destroyForcibly(); return new SystemCheckResponse.ToolStatus(false, null, path, "Execution timed out"); }
+            if (process.exitValue() == 0 && output != null) return new SystemCheckResponse.ToolStatus(true, output.trim(), path, null);
             return new SystemCheckResponse.ToolStatus(false, null, path, "Process exited with code " + process.exitValue());
         } catch (Exception e) {
             return new SystemCheckResponse.ToolStatus(false, null, path, e.getMessage());
         }
     }
 
-    public Optional<DownloadJob> findJob(String id) {
-        return Optional.ofNullable(jobs.get(id));
-    }
+    public Optional<DownloadJob> findJob(String id) { return Optional.ofNullable(jobs.get(id)); }
 
     public boolean cancelJob(String id) {
         DownloadJob job = jobs.get(id);
-        if (job == null) {
-            return false;
-        }
+        if (job == null) return false;
         if ("downloading".equals(job.getState()) || "processing".equals(job.getState()) || "queued".equals(job.getState())) {
-            Process proc = job.getProcess();
-            if (proc != null && proc.isAlive()) {
-                proc.destroyForcibly();
-            }
             job.setState("cancelled");
             job.setMessage("Download was cancelled by the user.");
+            Process proc = job.getProcess();
+            if (proc != null && proc.isAlive()) proc.destroyForcibly();
             return true;
         }
         return false;
     }
 
+    // ────────────────────────────────────────────────────────────────────────
+    //  Video info with per-resolution estimated file sizes & auto cookies
+    // ────────────────────────────────────────────────────────────────────────
+
     /**
-     * Fetches video metadata including all available resolutions and audio info.
-     * Cookies are always used automatically: cookie file first, then browser fallback.
+     * Fetches video metadata including all available resolutions, estimated
+     * downloading sizes per resolution, and audio availability.
+     * Cookies are handled automatically (cookies.txt first, then direct / browser fallback).
      */
-    public Map<String, Object> fetchVideoInfo(String url, String browser) throws Exception {
-        List<String> command = new ArrayList<>(List.of(ytDlpPath, "--dump-single-json", "--no-warnings", "--no-playlist"));
-        addCookieArgs(command, browser);
-        command.add(url);
-
-        Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-        String output;
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            StringBuilder result = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                result.append(line);
-            }
-            output = result.toString();
-        }
-
-        if (!process.waitFor(90, TimeUnit.SECONDS)) {
-            process.destroyForcibly();
-            throw new ResponseStatusException(HttpStatus.GATEWAY_TIMEOUT, "The video site took too long to respond.");
-        }
-
-        if (process.exitValue() != 0) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, safeMessage(output));
-        }
-
+    public VideoInfoResponse fetchVideoInfo(String url, String browser) throws Exception {
+        String output = runInfoWithAutoCookies(url, browser);
         JsonNode data = mapper.readTree(output);
-
-        // Collect all unique video heights from actual formats
-        List<Integer> heights = new ArrayList<>();
-        boolean hasAudio = false;
-        JsonNode formats = data.path("formats");
-        if (formats.isArray()) {
-            for (JsonNode format : formats) {
-                // Check video tracks
-                JsonNode height = format.get("height");
-                String vcodec = format.path("vcodec").asText("");
-                if (height != null && height.canConvertToInt() && !"none".equals(vcodec)) {
-                    heights.add(height.asInt());
-                }
-                // Check audio tracks
-                String acodec = format.path("acodec").asText("");
-                if (!"none".equals(acodec)) {
-                    hasAudio = true;
-                }
-            }
-        }
-
-        List<Integer> uniqueHeights = heights.stream().distinct().sorted(Comparator.reverseOrder()).toList();
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("title", data.path("title").asText("Untitled video"));
-        result.put("thumbnail", data.path("thumbnail").asText(""));
-        result.put("duration", data.path("duration").asInt(0));
-        result.put("uploader", data.path("uploader").asText(data.path("channel").asText("Unknown creator")));
-        result.put("qualities", uniqueHeights);
-        result.put("hasAudio", hasAudio);
-        return result;
+        return parseVideoInfo(data);
     }
 
     /**
-     * Submits a download job. Mode can be "video" or "audio".
-     * Cookies are always used automatically.
+     * Parses yt-dlp --dump-single-json output into VideoInfoResponse with
+     * accurate per-resolution downloading sizes.
      */
+    public VideoInfoResponse parseVideoInfo(JsonNode data) {
+        double videoDuration = data.path("duration").asDouble(0);
+        JsonNode formats = data.path("formats");
+
+        Set<Integer> allHeights = new HashSet<>();
+        Map<Integer, Long> bestVideoOnlySizeByHeight = new LinkedHashMap<>();
+        Map<Integer, Long> bestCombinedSizeByHeight = new LinkedHashMap<>();
+        boolean hasAudio = false;
+        long bestAudioOnlySize = 0;
+        double bestAudioBitrate = 0;
+
+        if (formats.isArray()) {
+            for (JsonNode fmt : formats) {
+                String vcodec = fmt.path("vcodec").asText("");
+                String acodec = fmt.path("acodec").asText("");
+                String ext = fmt.path("ext").asText("");
+                String protocol = fmt.path("protocol").asText("");
+                String note = fmt.path("format_note").asText("");
+
+                // Skip storyboards and image thumbnails
+                if ("mhtml".equalsIgnoreCase(ext)
+                        || "mhtml".equalsIgnoreCase(protocol)
+                        || "images".equalsIgnoreCase(vcodec)
+                        || note.toLowerCase(Locale.ROOT).contains("storyboard")) {
+                    continue;
+                }
+
+                long fsize = getFilesize(fmt, videoDuration);
+                boolean hasVideo = !"none".equalsIgnoreCase(vcodec);
+                boolean hasFmtAudio = !"none".equalsIgnoreCase(acodec);
+
+                JsonNode heightNode = fmt.get("height");
+                if (heightNode != null && heightNode.canConvertToInt() && hasVideo) {
+                    int h = heightNode.asInt();
+                    if (h > 0) {
+                        allHeights.add(h);
+                        if (!hasFmtAudio) {
+                            bestVideoOnlySizeByHeight.merge(h, fsize, Math::max);
+                        } else {
+                            bestCombinedSizeByHeight.merge(h, fsize, Math::max);
+                        }
+                    }
+                }
+
+                // Audio-only tracks
+                if ("none".equalsIgnoreCase(vcodec) && hasFmtAudio) {
+                    hasAudio = true;
+                    bestAudioOnlySize = Math.max(bestAudioOnlySize, fsize);
+                    bestAudioBitrate = Math.max(bestAudioBitrate, fmt.path("abr").asDouble(0));
+                }
+
+                // Combined tracks also indicate audio is available
+                if (hasFmtAudio) {
+                    hasAudio = true;
+                    bestAudioBitrate = Math.max(bestAudioBitrate, fmt.path("abr").asDouble(0));
+                }
+            }
+        }
+
+        // If no separate audio-only size was reported, estimate audio download size from abr if available
+        if (bestAudioOnlySize <= 0 && hasAudio && bestAudioBitrate > 0 && videoDuration > 0) {
+            bestAudioOnlySize = (long) (bestAudioBitrate * 1000.0 / 8.0 * videoDuration);
+        }
+
+        List<Integer> uniqueHeights = allHeights.stream()
+                .sorted(Comparator.reverseOrder())
+                .toList();
+
+        // Build sizeMap: height -> estimated total downloading bytes
+        Map<String, Long> sizeMap = new LinkedHashMap<>();
+        long topLevelFallbackSize = getFilesize(data, videoDuration);
+        long maxKnownSize = 0;
+
+        for (int h : uniqueHeights) {
+            long videoOnlyBytes = bestVideoOnlySizeByHeight.getOrDefault(h, 0L);
+            long combinedBytes = bestCombinedSizeByHeight.getOrDefault(h, 0L);
+
+            long totalBytes = 0L;
+            if (videoOnlyBytes > 0 && bestAudioOnlySize > 0) {
+                totalBytes = videoOnlyBytes + bestAudioOnlySize;
+            } else if (combinedBytes > 0) {
+                totalBytes = combinedBytes;
+            } else if (videoOnlyBytes > 0) {
+                totalBytes = videoOnlyBytes;
+            } else if (uniqueHeights.size() == 1 && topLevelFallbackSize > 0) {
+                totalBytes = topLevelFallbackSize;
+            }
+
+            sizeMap.put(String.valueOf(h), totalBytes);
+            if (totalBytes > maxKnownSize) {
+                maxKnownSize = totalBytes;
+            }
+        }
+
+        long bestSize = 0L;
+        if (!uniqueHeights.isEmpty()) {
+            bestSize = sizeMap.getOrDefault(String.valueOf(uniqueHeights.get(0)), 0L);
+        }
+        if (bestSize <= 0) {
+            bestSize = maxKnownSize > 0 ? maxKnownSize : topLevelFallbackSize;
+        }
+        sizeMap.put("best", bestSize);
+        sizeMap.put("audio", bestAudioOnlySize);
+
+        return new VideoInfoResponse(
+                data.path("title").asText("Untitled video"),
+                data.path("thumbnail").asText(""),
+                data.path("duration").asInt(0),
+                data.path("uploader").asText(data.path("channel").asText("Unknown creator")),
+                uniqueHeights,
+                hasAudio,
+                sizeMap
+        );
+    }
+
+    /**
+     * Extracts exact or estimated filesize in bytes from a format or video JSON node,
+     * falling back to bitrate * duration using the provided video duration.
+     */
+    long getFilesize(JsonNode fmt, double videoDuration) {
+        JsonNode fs = fmt.get("filesize");
+        if (fs != null && fs.canConvertToLong() && fs.asLong() > 0) {
+            return fs.asLong();
+        }
+        JsonNode fsa = fmt.get("filesize_approx");
+        if (fsa != null && fsa.canConvertToLong() && fsa.asLong() > 0) {
+            return fsa.asLong();
+        }
+        double bitrate = fmt.path("tbr").asDouble(0);
+        if (bitrate <= 0) {
+            double vbr = fmt.path("vbr").asDouble(0);
+            double abr = fmt.path("abr").asDouble(0);
+            if (vbr > 0 || abr > 0) {
+                bitrate = vbr + abr;
+            }
+        }
+        double dur = fmt.path("duration").asDouble(0);
+        if (dur <= 0) {
+            dur = videoDuration;
+        }
+        if (bitrate > 0 && dur > 0) {
+            return (long) (bitrate * 1000.0 / 8.0 * dur);
+        }
+        return 0L;
+    }
+
+    private String runInfoWithAutoCookies(String url, String browser) throws Exception {
+        List<List<String>> strategies = buildCookieStrategies(browser);
+        String lastOutput = "";
+        int lastExit = 1;
+
+        for (int i = 0; i < strategies.size(); i++) {
+            List<String> command = new ArrayList<>(
+                    List.of(ytDlpPath, "--dump-single-json", "--no-warnings", "--no-playlist"));
+            command.addAll(strategies.get(i));
+            command.add(url);
+
+            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+            String output = readProcessOutput(process);
+
+            if (!process.waitFor(90, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                throw new ResponseStatusException(HttpStatus.GATEWAY_TIMEOUT, "The video site took too long to respond.");
+            }
+            if (process.exitValue() == 0) {
+                return output;
+            }
+
+            lastOutput = output;
+            lastExit = process.exitValue();
+
+            // Only retry with next cookie strategy if error relates to auth/cookies/bot-check
+            if (i == 0 && !hasCookieFile() && !looksLikeCookieOrAuthIssue(output)) {
+                break;
+            }
+        }
+
+        if (lastExit != 0) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, safeMessage(lastOutput));
+        }
+        return lastOutput;
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    //  Download with concurrent fragments, chunking, and automatic cookies
+    // ────────────────────────────────────────────────────────────────────────
+
     public String submitDownloadJob(String url, String quality, String mode, String browser) {
         String id = UUID.randomUUID().toString();
         DownloadJob job = new DownloadJob(id);
@@ -213,67 +331,68 @@ public class VideoDownloadService {
             boolean audioOnly = "audio".equalsIgnoreCase(mode);
             String outputPattern = jobDir.resolve("%(title).120B [%(id)s].%(ext)s").toString();
 
-            List<String> command = new ArrayList<>();
-            command.add(ytDlpPath);
-            command.add("--newline");
-            command.add("--no-warnings");
-            command.add("--no-playlist");
+            List<List<String>> strategies = buildCookieStrategies(browser);
+            int exit = -1;
+            String lastErrorOutput = "";
 
-            if (audioOnly) {
-                // Audio-only: extract best audio → convert to mp3
-                command.addAll(List.of(
-                        "--extract-audio",
-                        "--audio-format", "mp3",
-                        "--audio-quality", "0",
-                        "--output", outputPattern
-                ));
-            } else {
-                // Video: use the user-selected quality
-                String format;
-                if ("best".equals(quality)) {
-                    format = "bv*+ba/b";
-                } else {
-                    format = "bestvideo[height<=" + quality + "]+bestaudio/best[height<=" + quality + "]/best";
+            for (int i = 0; i < strategies.size(); i++) {
+                if ("cancelled".equals(job.getState())) return;
+
+                List<String> command = buildDownloadCommand(outputPattern, quality, audioOnly);
+                command.addAll(strategies.get(i));
+                command.add(url);
+
+                Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+                job.setProcess(process);
+                job.setState("downloading");
+                job.setPercent(0);
+                job.setMessage(audioOnly ? "Downloading audio..." : "Downloading video...");
+
+                StringBuilder outputCapture = new StringBuilder();
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        if ("cancelled".equals(job.getState())) break;
+                        outputCapture.append(line).append('\n');
+                        Matcher matcher = PERCENT.matcher(line);
+                        if (matcher.find()) {
+                            try {
+                                job.setPercent(Math.min(99.0, Double.parseDouble(matcher.group(1))));
+                            } catch (NumberFormatException ignored) {}
+                        }
+                        String lower = line.toLowerCase(Locale.ROOT);
+                        if (lower.contains("merging formats") || lower.contains("already been downloaded")) {
+                            job.setState("processing");
+                            job.setMessage("Merging video and audio...");
+                        }
+                        if (lower.contains("converting") || lower.contains("extracting audio")) {
+                            job.setState("processing");
+                            job.setMessage("Converting to audio...");
+                        }
+                    }
                 }
-                command.addAll(List.of(
-                        "--format", format,
-                        "--merge-output-format", "mp4",
-                        "--output", outputPattern
-                ));
-            }
 
-            addCookieArgs(command, browser);
-            command.add(url);
+                exit = process.waitFor();
+                if ("cancelled".equals(job.getState())) return;
 
-            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-            job.setProcess(process);
-            job.setState("downloading");
-            job.setMessage(audioOnly ? "Downloading audio..." : "Downloading video...");
+                if (exit == 0) {
+                    break;
+                }
 
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    Matcher matcher = PERCENT.matcher(line);
-                    if (matcher.find()) {
-                        try {
-                            job.setPercent(Math.min(99.0, Double.parseDouble(matcher.group(1))));
-                        } catch (NumberFormatException ignored) {}
-                    }
-                    String lower = line.toLowerCase(Locale.ROOT);
-                    if (lower.contains("merging formats") || lower.contains("already been downloaded")) {
-                        job.setState("processing");
-                        job.setMessage("Preparing file...");
-                    }
-                    if (lower.contains("converting") || lower.contains("extracting audio")) {
-                        job.setState("processing");
-                        job.setMessage("Converting to audio...");
-                    }
+                lastErrorOutput = outputCapture.toString();
+                if (i == 0 && !hasCookieFile() && !looksLikeCookieOrAuthIssue(lastErrorOutput)) {
+                    break;
                 }
             }
 
-            int exit = process.waitFor();
+            if ("cancelled".equals(job.getState())) return;
+
             if (exit != 0) {
-                throw new IOException("yt-dlp could not download this page. It may be unsupported or access-restricted.");
+                String detail = safeMessage(lastErrorOutput);
+                throw new IOException(detail.isBlank()
+                        ? "yt-dlp could not download this page. It may be unsupported or access-restricted."
+                        : detail);
             }
 
             try (Stream<Path> files = Files.list(jobDir)) {
@@ -289,42 +408,122 @@ public class VideoDownloadService {
             job.setState("finished");
             job.setMessage(audioOnly ? "Your audio is ready." : "Your video is ready.");
         } catch (Exception ex) {
-            job.setState("error");
-            job.setMessage(safeMessage(ex.getMessage()));
+            if (!"cancelled".equals(job.getState())) {
+                job.setState("error");
+                job.setMessage(safeMessage(ex.getMessage()));
+            }
         } finally {
             job.setProcess(null);
         }
     }
 
-    /**
-     * Adds cookie arguments to the yt-dlp command. Always called automatically.
-     * Priority: cookies.txt file (most reliable) → --cookies-from-browser (fallback).
-     */
-    private void addCookieArgs(List<String> command, String browser) {
-        if (hasCookieFile()) {
-            command.add("--cookies");
-            command.add(cookieFilePath.toString());
+    private List<String> buildDownloadCommand(String outputPattern, String quality, boolean audioOnly) {
+        List<String> command = new ArrayList<>();
+        command.add(ytDlpPath);
+        command.add("--newline");
+        command.add("--no-warnings");
+        command.add("--no-playlist");
+
+        // ── Speed optimizations ────────────────────────────────────────
+        // Download 8 fragments in parallel for DASH/HLS streams
+        command.add("--concurrent-fragments");
+        command.add(String.valueOf(CONCURRENT_FRAGMENTS));
+        // Larger I/O buffer for faster throughput
+        command.add("--buffer-size");
+        command.add("64K");
+        command.add("--no-resize-buffer");
+        // Chunked HTTP downloads help bypass single-stream throttling
+        command.add("--http-chunk-size");
+        command.add("10M");
+        // Fast retries and direct output writing
+        command.add("--retries");
+        command.add("3");
+        command.add("--fragment-retries");
+        command.add("3");
+        command.add("--no-part");
+
+        if (audioOnly) {
+            command.addAll(List.of(
+                    "--extract-audio",
+                    "--audio-format", "mp3",
+                    "--audio-quality", "0",
+                    "--output", outputPattern));
         } else {
-            String b = browser != null && SUPPORTED_BROWSERS.contains(browser) ? browser : "chrome";
-            command.add("--cookies-from-browser");
-            command.add(b);
+            String format = "best".equals(quality)
+                    ? "bv*+ba/b"
+                    : "bestvideo[height<=" + quality + "]+bestaudio/best[height<=" + quality + "]/best";
+            command.addAll(List.of(
+                    "--format", format,
+                    "--merge-output-format", "mp4",
+                    "--output", outputPattern));
+        }
+        return command;
+    }
+
+    /**
+     * Builds ordered cookie argument strategies:
+     * - If cookies.txt exists: use it directly.
+     * - Otherwise: try direct first (fast, avoids Windows Chrome DPAPI lock on public videos),
+     *   then automatically fall back to preferred browser and other installed browsers.
+     */
+    private List<List<String>> buildCookieStrategies(String browser) {
+        if (hasCookieFile()) {
+            return List.of(List.of("--cookies", cookieFilePath.toString()));
+        }
+        List<List<String>> strategies = new ArrayList<>();
+        strategies.add(List.of()); // Try direct without cookies first
+        String preferred = browser != null && SUPPORTED_BROWSERS.contains(browser) ? browser : "chrome";
+        strategies.add(List.of("--cookies-from-browser", preferred));
+        for (String fallback : FALLBACK_BROWSERS) {
+            if (!fallback.equals(preferred)) {
+                strategies.add(List.of("--cookies-from-browser", fallback));
+            }
+        }
+        return strategies;
+    }
+
+    private boolean looksLikeCookieOrAuthIssue(String output) {
+        if (output == null) return false;
+        String lower = output.toLowerCase(Locale.ROOT);
+        return lower.contains("sign in")
+                || lower.contains("cookies")
+                || lower.contains("cookie")
+                || lower.contains("bot")
+                || lower.contains("age")
+                || lower.contains("login")
+                || lower.contains("logged-in")
+                || lower.contains("private")
+                || lower.contains("members")
+                || lower.contains("403")
+                || lower.contains("401")
+                || lower.contains("confirm you")
+                || lower.contains("dpapi")
+                || lower.contains("could not copy");
+    }
+
+    private String readProcessOutput(Process process) throws IOException {
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            StringBuilder result = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                result.append(line);
+            }
+            return result.toString();
         }
     }
 
     private String safeMessage(String message) {
-        if (message == null || message.isBlank()) {
-            return "The operation failed. Check the URL and try again.";
-        }
-        return message.length() > 450 ? message.substring(0, 450) : message;
+        if (message == null || message.isBlank()) return "The operation failed. Check the URL and try again.";
+        String trimmed = message.trim();
+        return trimmed.length() > 450 ? trimmed.substring(0, 450) : trimmed;
     }
 
     @PreDestroy
     public void cleanup() {
         executor.shutdown();
         try {
-            if (!executor.awaitTermination(3, TimeUnit.SECONDS)) {
-                executor.shutdownNow();
-            }
+            if (!executor.awaitTermination(3, TimeUnit.SECONDS)) executor.shutdownNow();
         } catch (InterruptedException e) {
             executor.shutdownNow();
             Thread.currentThread().interrupt();

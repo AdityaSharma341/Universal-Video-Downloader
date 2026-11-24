@@ -53,10 +53,11 @@ public class VideoController {
     }
 
     /**
-     * Detect video info. Cookies are used automatically.
+     * Detect video info including available resolutions and estimated sizes.
+     * Cookies are handled automatically.
      */
     @PostMapping("/info")
-    public Map<String, Object> info(@RequestBody UrlRequest request, HttpServletRequest http) throws Exception {
+    public VideoInfoResponse info(@RequestBody UrlRequest request, HttpServletRequest http) throws Exception {
         authorize(http.getHeader("X-App-Token"));
         String url = UrlValidator.validateAndNormalizeUrl(request.url());
         String browser = UrlValidator.sanitizeBrowser(request.browser());
@@ -66,20 +67,15 @@ public class VideoController {
     /**
      * Start download. Mode can be "video" (default) or "audio".
      * Quality is a resolution height from the detected qualities, or "best".
-     * Cookies are used automatically.
+     * Cookies are handled automatically.
      */
     @PostMapping("/download")
     public Map<String, String> start(@RequestBody DownloadRequest request, HttpServletRequest http) {
         authorize(http.getHeader("X-App-Token"));
         String url = UrlValidator.validateAndNormalizeUrl(request.url());
-        String quality = request.quality() == null ? "best" : request.quality();
-        String mode = request.mode() == null ? "video" : request.mode();
+        String mode = UrlValidator.validateMode(request.mode());
+        String quality = "audio".equals(mode) ? "best" : UrlValidator.validateQuality(request.quality());
         String browser = UrlValidator.sanitizeBrowser(request.browser());
-
-        // For audio mode, quality is irrelevant
-        if ("audio".equalsIgnoreCase(mode)) {
-            quality = "best";
-        }
 
         String id = downloadService.submitDownloadJob(url, quality, mode, browser);
         return Map.of("jobId", id);

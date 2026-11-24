@@ -10,8 +10,9 @@ import java.util.Set;
 public final class UrlValidator {
 
     public static final int MAX_URL_LENGTH = 4096;
+    private static final int MAX_RESOLUTION_HEIGHT = 16384;
     private static final Set<String> ALLOWED_SCHEMES = Set.of("http", "https");
-    private static final Set<String> ALLOWED_QUALITIES = Set.of("best", "360", "480", "720", "1080", "1440", "2160");
+    private static final Set<String> ALLOWED_MODES = Set.of("video", "audio");
     private static final Set<String> SUPPORTED_BROWSERS = Set.of("chrome", "firefox", "edge", "brave", "opera", "vivaldi");
 
     private UrlValidator() {}
@@ -36,13 +37,33 @@ public final class UrlValidator {
         }
     }
 
+    /**
+     * Validates dynamic resolution height (any positive integer up to 16384) or "best".
+     */
     public static String validateQuality(String quality) {
         if (quality == null || quality.isBlank()) {
             return "best";
         }
         String normalized = quality.trim().toLowerCase(Locale.ROOT);
-        if (!ALLOWED_QUALITIES.contains(normalized)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported quality selection: " + quality);
+        if ("best".equals(normalized)) {
+            return "best";
+        }
+        if (normalized.matches("\\d{1,5}")) {
+            int height = Integer.parseInt(normalized);
+            if (height >= 1 && height <= MAX_RESOLUTION_HEIGHT) {
+                return normalized;
+            }
+        }
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported quality selection: " + quality);
+    }
+
+    public static String validateMode(String mode) {
+        if (mode == null || mode.isBlank()) {
+            return "video";
+        }
+        String normalized = mode.trim().toLowerCase(Locale.ROOT);
+        if (!ALLOWED_MODES.contains(normalized)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported download mode: " + mode);
         }
         return normalized;
     }

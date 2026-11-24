@@ -2,6 +2,9 @@ const $ = id => document.getElementById(id);
 let token = localStorage.getItem('vdToken') || '', tokenRequired = false, poller = null;
 let currentMode = 'video';
 let detectedQualities = [];
+let detectedSizes = {};
+let activeJobId = null;
+let isDownloading = false;
 
 const headers = () => ({
     'Content-Type': 'application/json',
@@ -17,7 +20,16 @@ function duration(s) {
     return h ? `${h}h ${m}m` : `${m}m ${sec}s`;
 }
 
+function formatBytes(bytes) {
+    if (!bytes || bytes <= 0) return null;
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
+
 function resLabel(h) {
+    if (h >= 4320) return h + 'p (8K)';
     if (h >= 2160) return h + 'p (4K)';
     if (h >= 1440) return h + 'p (2K)';
     if (h >= 1080) return h + 'p (Full HD)';
@@ -39,10 +51,10 @@ async function init() {
 function updateCookieIndicator(has) {
     let el = $('cookieIndicator');
     if (has) {
-        el.innerHTML = '🍪 <span class="cookie-ok">Cookie file loaded</span>';
+        el.innerHTML = '🍪 <span class="cookie-ok">Cookie file loaded (auto-applied)</span>';
         $('deleteCookies').classList.remove('hide');
     } else {
-        el.innerHTML = '🔓 <span class="cookie-auto">Using browser cookies automatically</span>';
+        el.innerHTML = '🔓 <span class="cookie-auto">Automatic cookies enabled</span>';
         $('deleteCookies').classList.add('hide');
     }
 }
@@ -112,32 +124,66 @@ function setMode(mode) {
         $('qualitySection').classList.remove('hide');
         $('audioSection').classList.add('hide');
     }
+    updateSelectedSizeDisplay();
 }
 
 $('modeVideo').onclick = () => setMode('video');
 $('modeAudio').onclick = () => setMode('audio');
 
-// ── Build quality dropdown from detected resolutions ───────────────────
+// ── Build quality dropdown & update live size display ──────────────────
 
-function buildQualityDropdown(qualities) {
-    detectedQualities = qualities;
+function buildQualityDropdown(qualities, sizeMap) {
+    detectedQualities = qualities || [];
+    detectedSizes = sizeMap || {};
     let sel = $('quality');
     sel.innerHTML = '';
 
     // "Best available" option always first
     let bestOpt = document.createElement('option');
     bestOpt.value = 'best';
-    bestOpt.textContent = 'Best available' + (qualities.length ? ' (' + Math.max(...qualities) + 'p)' : '');
+    let bestSize = formatBytes(detectedSizes['best']);
+    bestOpt.textContent = 'Best available'
+        + (detectedQualities.length ? ' (' + Math.max(...detectedQualities) + 'p)' : '')
+        + (bestSize ? ' — ~' + bestSize : '');
     sel.appendChild(bestOpt);
 
-    // Add each detected resolution
-    for (let h of qualities) {
+    // Add every detected resolution from the link
+    for (let h of detectedQualities) {
         let opt = document.createElement('option');
         opt.value = String(h);
-        opt.textContent = resLabel(h);
+        let sizeStr = formatBytes(detectedSizes[String(h)]);
+        opt.textContent = resLabel(h) + (sizeStr ? ' — ~' + sizeStr : '');
         sel.appendChild(opt);
     }
+
+    updateSelectedSizeDisplay();
 }
+
+function updateSelectedSizeDisplay() {
+    // Video selected resolution size
+    let selectedQ = $('quality').value || 'best';
+    let videoBytes = detectedSizes[selectedQ] || 0;
+    let videoSizeText = formatBytes(videoBytes);
+
+    $('selectedVideoSize').textContent = videoSizeText ? '~' + videoSizeText : 'Size unavailable';
+    $('selectedVideoSize').classList.toggle('size-known', !!videoSizeText);
+
+    if (!isDownloading) {
+        $('download').textContent = videoSizeText ? `Download (~${videoSizeText})` : 'Download';
+    }
+
+    // Audio size
+    let audioBytes = detectedSizes['audio'] || 0;
+    let audioSizeText = formatBytes(audioBytes);
+    $('selectedAudioSize').textContent = audioSizeText ? '~' + audioSizeText : 'Size unavailable';
+    $('selectedAudioSize').classList.toggle('size-known', !!audioSizeText);
+
+    if (!isDownloading) {
+        $('downloadAudio').textContent = audioSizeText ? `Download audio (~${audioSizeText})` : 'Download audio';
+    }
+}
+
+$('quality').addEventListener('change', updateSelectedSizeDisplay);
 
 // ── Detect video ───────────────────────────────────────────────────────
 
@@ -168,15 +214,14 @@ async function detectVideo() {
             $('thumb').classList.add('hide');
         }
 
-        // Build the quality options dynamically from detected resolutions
-        buildQualityDropdown(d.qualities);
+        // Build the quality options dynamically with sizes
+        buildQualityDropdown(d.qualities, d.sizeMap);
 
         // Show or hide audio option based on whether audio tracks exist
         if (d.hasAudio) {
             $('modeAudio').classList.remove('hide');
         } else {
             $('modeAudio').classList.add('hide');
-            setMode('video');
         }
 
         // Reset to video mode
@@ -208,10 +253,17 @@ async function startDownload() {
     let browser = $('browserSelect').value;
     let btn = mode === 'audio' ? $('downloadAudio') : $('download');
 
-    btn.disabled = true;
+    isDownloading = true;
+    $('download').disabled = true;
+    $('downloadAudio').disabled = true;
     btn.textContent = 'Starting...';
     $('progress').classList.remove('hide');
     $('save').classList.add('hide');
+    $('cancelDownload').classList.add('hide');
+    $('bar').style.width = '0%';
+    $('percent').textContent = '0%';
+    $('state').textContent = mode === 'audio' ? 'Starting audio' : 'Starting download';
+    $('message').textContent = 'Preparing fast download...';
 
     try {
         let r = await fetch('/api/download', {
@@ -226,16 +278,26 @@ async function startDownload() {
         });
         let d = await r.json();
         if (!r.ok) throw Error(d.message || d.detail || 'Could not start download.');
+        activeJobId = d.jobId;
+        $('cancelDownload').classList.remove('hide');
         poll(d.jobId);
     } catch (e) {
         err(e.message);
-        btn.disabled = false;
-        btn.textContent = 'Try again';
+        isDownloading = false;
+        resetDownloadButtons();
     }
 }
 
 $('download').onclick = startDownload;
 $('downloadAudio').onclick = startDownload;
+
+$('cancelDownload').onclick = async () => {
+    if (!activeJobId) return;
+    $('cancelDownload').disabled = true;
+    try {
+        await fetch('/api/download/' + activeJobId, { method: 'DELETE', headers: headers() });
+    } catch (e) {}
+};
 
 // ── Poll progress ──────────────────────────────────────────────────────
 
@@ -253,36 +315,56 @@ async function poll(id) {
                 $('state').textContent = isAudio ? 'Audio ready' : 'Download complete';
             } else if (d.state === 'processing') {
                 $('state').textContent = isAudio ? 'Converting' : 'Processing';
+            } else if (d.state === 'cancelled') {
+                $('state').textContent = 'Cancelled';
             } else {
                 $('state').textContent = isAudio ? 'Downloading audio' : 'Downloading';
             }
 
             if (d.state === 'finished') {
                 clearInterval(poller);
+                isDownloading = false;
+                activeJobId = null;
+                $('cancelDownload').classList.add('hide');
+                $('cancelDownload').disabled = false;
                 $('save').href = '/api/file/' + id + (token ? '?token=' + encodeURIComponent(token) : '');
                 $('save').classList.remove('hide');
                 $('save').textContent = isAudio ? 'Save audio to this device' : 'Save to this device';
                 resetDownloadButtons();
+            } else if (d.state === 'cancelled') {
+                clearInterval(poller);
+                isDownloading = false;
+                activeJobId = null;
+                $('cancelDownload').classList.add('hide');
+                $('cancelDownload').disabled = false;
+                resetDownloadButtons();
             } else if (d.state === 'error') {
                 clearInterval(poller);
+                isDownloading = false;
+                activeJobId = null;
+                $('cancelDownload').classList.add('hide');
+                $('cancelDownload').disabled = false;
                 err(d.message);
                 resetDownloadButtons();
             }
         } catch (e) {
             clearInterval(poller);
+            isDownloading = false;
+            activeJobId = null;
+            $('cancelDownload').classList.add('hide');
+            $('cancelDownload').disabled = false;
             err(e.message);
             resetDownloadButtons();
         }
     };
     await check();
-    poller = setInterval(check, 1500);
+    poller = setInterval(check, 700);
 }
 
 function resetDownloadButtons() {
     $('download').disabled = false;
-    $('download').textContent = 'Download';
     $('downloadAudio').disabled = false;
-    $('downloadAudio').textContent = 'Download audio';
+    updateSelectedSizeDisplay();
 }
 
 // ── Start ──────────────────────────────────────────────────────────────

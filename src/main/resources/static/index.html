@@ -1,145 +1,164 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#111827">
-<title>VideoDrop - Universal Video Downloader</title>
-<link rel="stylesheet" href="/style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <title>VideoDrop - Universal Video Downloader</title>
+  <link rel="stylesheet" href="/style.css">
 </head>
+
 <body>
-<main class="shell">
+  <main class="shell">
 
-<header class="top">
-  <div class="logo">▶</div>
-  <div><b>Video<span>Drop</span></b><small>UNIVERSAL VIDEO DOWNLOADER</small></div>
-  <label class="status">● Ready</label>
-</header>
+    <header class="top">
+      <div class="logo">▶</div>
+      <div><b>Video<span>Drop</span></b><small>UNIVERSAL VIDEO DOWNLOADER</small></div>
+      <label class="status">● Ready</label>
+    </header>
 
-<section class="hero">
-  <small>SAVE VIDEOS YOU'RE ALLOWED TO DOWNLOAD</small>
-  <h1>Your video.<br><em>Your device.</em></h1>
-  <p>Paste a supported video webpage link, choose video or audio, pick a quality, and save it to your device.</p>
-</section>
+    <section class="hero">
+      <small>SAVE VIDEOS YOU'RE ALLOWED TO DOWNLOAD</small>
+      <h1>Your video.<br><em>Your device.</em></h1>
+      <p>Paste a supported video webpage link, choose video or audio, pick a quality, and save it to your device.</p>
+    </section>
 
-<!-- URL Input -->
-<section class="panel">
-  <label for="url">Video webpage URL</label>
-  <div class="urlrow">
-    <input id="url" type="url" placeholder="https://example.com/watch?..." autocomplete="url">
-    <button id="detect">Detect video</button>
-  </div>
-  <p class="hint">Paste the webpage URL where the video is available. Cookies are handled automatically.</p>
-
-  <!-- Cookie status bar (collapsed) -->
-  <div class="cookie-bar" id="cookieBar">
-    <span id="cookieIndicator" class="cookie-indicator"></span>
-    <button id="cookieToggle" class="btn-small btn-muted">Manage cookies</button>
-  </div>
-
-  <!-- Expandable cookie management -->
-  <div id="cookiePanel" class="cookie-panel hide">
-    <div class="method-card">
-      <h4>📁 Upload cookies.txt <span class="badge">Optional</span></h4>
-      <p class="hint">Only needed if automatic browser cookie reading fails (e.g. Chrome on Windows). Upload a cookies.txt exported with the <a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc" target="_blank" rel="noopener">Get cookies.txt LOCALLY</a> extension.</p>
-      <div class="upload-row">
-        <input type="file" id="cookieFile" accept=".txt" class="file-input">
-        <label for="cookieFile" class="file-label">Choose cookies.txt</label>
-        <button id="uploadCookies" disabled>Upload</button>
-        <button id="deleteCookies" class="btn-small btn-muted hide">Remove cookie file</button>
+    <!-- URL Input -->
+    <section class="panel">
+      <label for="url">Video webpage URL</label>
+      <div class="urlrow">
+        <input id="url" type="url" placeholder="https://example.com/watch?..." autocomplete="url">
+        <button id="detect">Detect video</button>
       </div>
-      <div id="uploadStatus" class="hint"></div>
-    </div>
-    <div class="method-card">
-      <h4>🌐 Browser for automatic cookies</h4>
-      <p class="hint">Select which browser's cookies to read automatically. Firefox is most reliable on Windows.</p>
-      <div class="browser-row">
-        <label for="browserSelect" class="hint">Browser:</label>
-        <select id="browserSelect">
-          <option value="chrome">Chrome (default)</option>
-          <option value="firefox">Firefox</option>
-          <option value="edge">Edge</option>
-          <option value="brave">Brave</option>
-        </select>
+      <p class="hint">Paste the webpage URL where the video is available. Cookies are handled automatically.</p>
+
+      <!-- Cookie status bar (collapsed) -->
+      <div class="cookie-bar" id="cookieBar">
+        <span id="cookieIndicator" class="cookie-indicator"></span>
+        <button id="cookieToggle" class="btn-small btn-muted">Manage cookies</button>
       </div>
-    </div>
-  </div>
 
-  <div id="error" class="error hide"></div>
-</section>
+      <!-- Expandable cookie management -->
+      <div id="cookiePanel" class="cookie-panel hide">
+        <div class="method-card">
+          <h4>📁 Upload cookies.txt <span class="badge">Optional</span></h4>
+          <p class="hint">Only needed if automatic browser cookie reading fails (e.g. Chrome on Windows). Upload a
+            cookies.txt exported with the <a
+              href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
+              target="_blank" rel="noopener">Get cookies.txt LOCALLY</a> extension.</p>
+          <div class="upload-row">
+            <input type="file" id="cookieFile" accept=".txt" class="file-input">
+            <label for="cookieFile" class="file-label">Choose cookies.txt</label>
+            <button id="uploadCookies" disabled>Upload</button>
+            <button id="deleteCookies" class="btn-small btn-muted hide">Remove cookie file</button>
+          </div>
+          <div id="uploadStatus" class="hint"></div>
+        </div>
+        <div class="method-card">
+          <h4>🌐 Browser for automatic cookies</h4>
+          <p class="hint">Preferred browser if a site asks for login or age verification.</p>
+          <div class="browser-row">
+            <label for="browserSelect" class="hint">Browser:</label>
+            <select id="browserSelect">
+              <option value="chrome">Chrome (default)</option>
+              <option value="firefox">Firefox</option>
+              <option value="edge">Edge</option>
+              <option value="brave">Brave</option>
+            </select>
+          </div>
+        </div>
+      </div>
 
-<!-- Video Preview & Download Options -->
-<section id="preview" class="panel hide">
-  <div class="preview">
-    <img id="thumb" alt="Video thumbnail">
-    <div>
-      <small>VIDEO FOUND</small>
-      <h2 id="title"></h2>
-      <p id="details" class="hint"></p>
-    </div>
-  </div>
+      <div id="error" class="error hide"></div>
+    </section>
 
-  <!-- Download Mode Toggle -->
-  <div class="mode-section">
-    <label>Download as</label>
-    <div class="mode-toggle">
-      <button id="modeVideo" class="mode-btn active" data-mode="video">
-        <span class="mode-icon">🎬</span> Video
-      </button>
-      <button id="modeAudio" class="mode-btn" data-mode="audio">
-        <span class="mode-icon">🎵</span> Audio Only
-      </button>
-    </div>
-  </div>
+    <!-- Video Preview & Download Options -->
+    <section id="preview" class="panel hide">
+      <div class="preview">
+        <img id="thumb" alt="Video thumbnail">
+        <div>
+          <small>VIDEO FOUND</small>
+          <h2 id="title"></h2>
+          <p id="details" class="hint"></p>
+        </div>
+      </div>
 
-  <!-- Quality Selection (dynamic, hidden for audio) -->
-  <div class="quality" id="qualitySection">
-    <div>
-      <label for="quality">Video quality</label>
-      <select id="quality">
-        <!-- Populated dynamically from detected resolutions -->
-      </select>
-    </div>
-    <button id="download">Download</button>
-  </div>
+      <!-- Download Mode Toggle -->
+      <div class="mode-section">
+        <label>Download as</label>
+        <div class="mode-toggle">
+          <button id="modeVideo" class="mode-btn active" data-mode="video">
+            <span class="mode-icon">🎬</span> Video
+          </button>
+          <button id="modeAudio" class="mode-btn" data-mode="audio">
+            <span class="mode-icon">🎵</span> Audio Only
+          </button>
+        </div>
+      </div>
 
-  <!-- Audio download (shown when audio mode active) -->
-  <div class="quality hide" id="audioSection">
-    <div>
-      <label>Audio format</label>
-      <p class="hint audio-info">Best available quality · MP3 format</p>
-    </div>
-    <button id="downloadAudio">Download audio</button>
-  </div>
-</section>
+      <!-- Quality Selection (dynamic, hidden for audio) -->
+      <div class="quality" id="qualitySection">
+        <div>
+          <label for="quality">Video quality</label>
+          <select id="quality">
+            <!-- Populated dynamically from detected resolutions -->
+          </select>
+          <div id="videoSizeBar" class="size-badge">
+            <span class="size-label">Downloading size:</span>
+            <strong id="selectedVideoSize">—</strong>
+          </div>
+        </div>
+        <button id="download">Download</button>
+      </div>
 
-<!-- Progress -->
-<section id="progress" class="panel hide">
-  <div class="progresshead">
-    <b id="state">Downloading</b>
-    <b id="percent">0%</b>
-  </div>
-  <div class="track"><div id="bar"></div></div>
-  <p id="message" class="hint">Waiting...</p>
-  <a id="save" class="button hide">Save to this device</a>
-</section>
+      <!-- Audio download (shown when audio mode active) -->
+      <div class="quality hide" id="audioSection">
+        <div>
+          <label>Audio format</label>
+          <p class="hint audio-info">Best available quality · MP3 format</p>
+          <div id="audioSizeBar" class="size-badge">
+            <span class="size-label">Downloading size:</span>
+            <strong id="selectedAudioSize">—</strong>
+          </div>
+        </div>
+        <button id="downloadAudio">Download audio</button>
+      </div>
+    </section>
 
-<footer>
-  Downloads are processed on the computer running this server. The browser chooses where the file is saved.<br>
-  Only download content you own or are authorized to save. DRM and access restrictions are not bypassed.
-</footer>
+    <!-- Progress -->
+    <section id="progress" class="panel hide">
+      <div class="progresshead">
+        <b id="state">Downloading</b>
+        <b id="percent">0%</b>
+      </div>
+      <div class="track">
+        <div id="bar"></div>
+      </div>
+      <p id="message" class="hint">Waiting...</p>
+      <div class="progress-actions">
+        <a id="save" class="button hide">Save to this device</a>
+        <button id="cancelDownload" class="btn-danger hide">Cancel</button>
+      </div>
+    </section>
 
-</main>
+    <footer>
+      Downloads are processed on the computer running this server. The browser chooses where the file is saved.<br>
+      Only download content you own or are authorized to save. DRM and access restrictions are not bypassed.
+    </footer>
 
-<dialog id="tokenDialog">
-  <form method="dialog">
-    <h3>Network access token</h3>
-    <p class="hint">Enter the token configured on the laptop.</p>
-    <input id="token" type="password" placeholder="Access token">
-    <button>Continue</button>
-  </form>
-</dialog>
+  </main>
 
-<script src="/app.js"></script>
+  <dialog id="tokenDialog">
+    <form method="dialog">
+      <h3>Network access token</h3>
+      <p class="hint">Enter the token configured on the laptop.</p>
+      <input id="token" type="password" placeholder="Access token">
+      <button>Continue</button>
+    </form>
+  </dialog>
+
+  <script src="/app.js"></script>
 </body>
+
 </html>

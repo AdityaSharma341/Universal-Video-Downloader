@@ -18,23 +18,33 @@ label{display:block;font-size:13px;font-weight:700;margin-bottom:9px}
 .urlrow{display:flex;gap:10px}
 input,select{width:100%;min-width:0;background:#0c1426;border:1px solid #35425e;border-radius:10px;padding:14px;color:var(--text);font:inherit}
 button,.button{border:0;border-radius:10px;padding:13px 18px;background:linear-gradient(110deg,#7969f5,#5d8cff);color:white;font:inherit;font-weight:700;cursor:pointer;text-decoration:none;white-space:nowrap}
-button:disabled{opacity:.5}
+button:disabled{opacity:.5;cursor:not-allowed}
 .hint{color:var(--muted);font-size:12px;line-height:1.6}
 .preview{display:flex;gap:15px;align-items:center}
 .preview img{width:185px;aspect-ratio:16/9;object-fit:cover;border-radius:10px}
 .preview h2{font-size:18px;overflow-wrap:anywhere}
-.quality{display:flex;align-items:end;gap:14px;margin-top:20px}
+.quality{display:flex;align-items:flex-start;gap:14px;margin-top:20px}
 .quality>div{flex:1}
-.error{background:#4a1e2a;color:#ffc5d0;padding:12px;border-radius:9px;font-size:13px}
+.quality>button{margin-top:25px}
+.error{background:#4a1e2a;color:#ffc5d0;padding:12px;border-radius:9px;font-size:13px;margin-top:12px}
 .hide{display:none!important}
 .progresshead{display:flex;justify-content:space-between}
 .track{height:10px;background:#0c1426;border-radius:20px;overflow:hidden;margin:14px 0}
 .track div{height:100%;width:0;background:linear-gradient(90deg,var(--a),var(--b));transition:width .3s}
-.button{display:inline-block;margin-top:10px}
+.button{display:inline-block}
+.progress-actions{display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.btn-danger{background:#5a2333;color:#ffd0da}
+.btn-danger:hover{background:#732b40}
 footer{text-align:center;color:#7f8ba5;font-size:11px;line-height:1.7;padding:20px 8px}
 dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:16px;width:min(420px,calc(100% - 30px))}
 dialog::backdrop{background:#000a}
 dialog form{display:grid;gap:12px}
+
+/* ── Size badge below resolution / audio selection ──────────────────── */
+.size-badge{display:inline-flex;align-items:center;gap:8px;margin-top:10px;padding:7px 12px;background:#0c1426;border:1px solid var(--line);border-radius:8px;font-size:12px}
+.size-label{color:var(--muted)}
+.size-badge strong{color:var(--muted);font-weight:700}
+.size-badge strong.size-known{color:var(--b)}
 
 /* ── Cookie bar (collapsed) ─────────────────────────────────────────── */
 .cookie-bar{display:flex;align-items:center;gap:10px;margin-top:12px;padding:10px 14px;background:#0c1426;border-radius:10px;font-size:12px}
@@ -86,6 +96,7 @@ dialog form{display:grid;gap:12px}
     .panel{padding:16px}
     .urlrow,.quality,.upload-row{flex-direction:column;align-items:stretch}
     .urlrow button,.quality button{width:100%}
+    .quality>button{margin-top:4px}
     .preview{align-items:stretch;flex-direction:column}
     .preview img{width:100%}
     .browser-row{flex-direction:column;align-items:stretch}
