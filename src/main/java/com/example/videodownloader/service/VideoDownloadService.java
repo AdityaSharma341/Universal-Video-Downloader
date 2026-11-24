@@ -6,6 +6,7 @@ import com.example.videodownloader.model.DownloadJob;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PreDestroy;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -16,9 +17,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.regex.Matcher;
@@ -34,27 +34,50 @@ public class VideoDownloadService {
 
     /** Number of concurrent fragment downloads for speed. */
     private static final int CONCURRENT_FRAGMENTS = 8;
+    private static final long SERVED_CLEANUP_DELAY_MS = 60_000L;
+    private static final long UNSERVED_EXPIRY_MS = 15 * 60_000L;
 
     private final ObjectMapper mapper = new ObjectMapper();
     private final ConcurrentMap<String, DownloadJob> jobs = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newFixedThreadPool(4);
+    private final ScheduledExecutorService cleanupScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "videodrop-temp-cleanup");
+        t.setDaemon(true);
+        return t;
+    });
 
     private final Path downloadRoot;
+    private final boolean usingSystemTemp;
     private final String ytDlpPath;
     private final Path cookieFilePath;
 
+    public VideoDownloadService(String downloadDir, String ytDlpPath) throws IOException {
+        this(downloadDir, ytDlpPath, "cookies.txt");
+    }
+
+    @Autowired
     public VideoDownloadService(
-            @Value("${app.download-dir:downloads}") String downloadDir,
-            @Value("${app.ytdlp-path:yt-dlp}") String ytDlpPath) throws IOException {
-        this.downloadRoot = Paths.get(downloadDir).toAbsolutePath().normalize();
+            @Value("${app.download-dir:}") String downloadDir,
+            @Value("${app.ytdlp-path:yt-dlp}") String ytDlpPath,
+            @Value("${app.cookie-file:cookies.txt}") String cookieFile) throws IOException {
+        this.usingSystemTemp = (downloadDir == null || downloadDir.isBlank());
+        this.downloadRoot = this.usingSystemTemp
+                ? Paths.get(System.getProperty("java.io.tmpdir"), "videodrop-temp").toAbsolutePath().normalize()
+                : Paths.get(downloadDir).toAbsolutePath().normalize();
         Files.createDirectories(this.downloadRoot);
+
+        if (this.usingSystemTemp) {
+            cleanStaleTempDirectories();
+        }
+
         this.ytDlpPath = ytDlpPath;
-        this.cookieFilePath = this.downloadRoot.getParent() != null
-                ? this.downloadRoot.getParent().resolve("cookies.txt")
-                : this.downloadRoot.resolve("cookies.txt");
+        this.cookieFilePath = Paths.get(cookieFile).toAbsolutePath().normalize();
+
+        this.cleanupScheduler.scheduleWithFixedDelay(this::evictExpiredJobs, 30, 30, TimeUnit.SECONDS);
     }
 
     public Path getDownloadRoot() { return downloadRoot; }
+    public boolean isUsingSystemTemp() { return usingSystemTemp; }
     public Path getCookieFilePath() { return cookieFilePath; }
     public boolean hasCookieFile() { return Files.isRegularFile(cookieFilePath); }
 
@@ -96,6 +119,13 @@ public class VideoDownloadService {
 
     public Optional<DownloadJob> findJob(String id) { return Optional.ofNullable(jobs.get(id)); }
 
+    public void markJobServed(String id) {
+        DownloadJob job = jobs.get(id);
+        if (job != null) {
+            job.markDownloaded();
+        }
+    }
+
     public boolean cancelJob(String id) {
         DownloadJob job = jobs.get(id);
         if (job == null) return false;
@@ -103,7 +133,11 @@ public class VideoDownloadService {
             job.setState("cancelled");
             job.setMessage("Download was cancelled by the user.");
             Process proc = job.getProcess();
-            if (proc != null && proc.isAlive()) proc.destroyForcibly();
+            if (proc != null && proc.isAlive()) {
+                proc.destroyForcibly();
+                try { proc.waitFor(2, TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            }
+            deleteJobDirectory(id);
             return true;
         }
         return false;
@@ -346,7 +380,7 @@ public class VideoDownloadService {
                 job.setProcess(process);
                 job.setState("downloading");
                 job.setPercent(0);
-                job.setMessage(audioOnly ? "Downloading audio..." : "Downloading video...");
+                job.setMessage(audioOnly ? "Preparing audio download..." : "Preparing video download...");
 
                 StringBuilder outputCapture = new StringBuilder();
                 try (BufferedReader reader = new BufferedReader(
@@ -406,11 +440,12 @@ public class VideoDownloadService {
 
             job.setPercent(100.0);
             job.setState("finished");
-            job.setMessage(audioOnly ? "Your audio is ready." : "Your video is ready.");
+            job.setMessage("Starting browser download...");
         } catch (Exception ex) {
             if (!"cancelled".equals(job.getState())) {
                 job.setState("error");
                 job.setMessage(safeMessage(ex.getMessage()));
+                deleteJobDirectory(job.getId());
             }
         } finally {
             job.setProcess(null);
@@ -519,14 +554,70 @@ public class VideoDownloadService {
         return trimmed.length() > 450 ? trimmed.substring(0, 450) : trimmed;
     }
 
+    // ────────────────────────────────────────────────────────────────────────
+    //  Temporary file cleanup (keeps disk & project directory clean)
+    // ────────────────────────────────────────────────────────────────────────
+
+    void evictExpiredJobs() {
+        long now = System.currentTimeMillis();
+        for (Map.Entry<String, DownloadJob> entry : jobs.entrySet()) {
+            DownloadJob job = entry.getValue();
+            String state = job.getState();
+            boolean expiredServed = job.getDownloadedAt() > 0 && (now - job.getDownloadedAt()) >= SERVED_CLEANUP_DELAY_MS;
+            boolean expiredUnserved = "finished".equals(state) && job.getDownloadedAt() == 0
+                    && (now - job.getCreatedAt()) >= UNSERVED_EXPIRY_MS;
+            boolean finishedErrorOrCancel = ("error".equals(state) || "cancelled".equals(state))
+                    && (now - job.getCreatedAt()) >= 10_000L;
+
+            if (expiredServed || expiredUnserved || finishedErrorOrCancel) {
+                deleteJobDirectory(job.getId());
+                jobs.remove(entry.getKey());
+            }
+        }
+    }
+
+    private void deleteJobDirectory(String jobId) {
+        Path jobDir = downloadRoot.resolve(jobId).normalize();
+        if (jobDir.startsWith(downloadRoot) && Files.exists(jobDir)) {
+            deleteDirQuietly(jobDir);
+        }
+    }
+
+    private void cleanStaleTempDirectories() {
+        try (Stream<Path> entries = Files.list(downloadRoot)) {
+            entries.filter(Files::isDirectory).forEach(VideoDownloadService::deleteDirQuietly);
+        } catch (IOException ignored) {}
+    }
+
+    private static void deleteDirQuietly(Path dir) {
+        try {
+            Files.walkFileTree(dir, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult visitFile(Path f, BasicFileAttributes a) throws IOException {
+                    Files.deleteIfExists(f);
+                    return FileVisitResult.CONTINUE;
+                }
+                @Override
+                public FileVisitResult postVisitDirectory(Path d, IOException e) throws IOException {
+                    Files.deleteIfExists(d);
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+        } catch (IOException ignored) {}
+    }
+
     @PreDestroy
     public void cleanup() {
+        cleanupScheduler.shutdownNow();
         executor.shutdown();
         try {
             if (!executor.awaitTermination(3, TimeUnit.SECONDS)) executor.shutdownNow();
         } catch (InterruptedException e) {
             executor.shutdownNow();
             Thread.currentThread().interrupt();
+        }
+        if (usingSystemTemp) {
+            cleanStaleTempDirectories();
         }
     }
 }

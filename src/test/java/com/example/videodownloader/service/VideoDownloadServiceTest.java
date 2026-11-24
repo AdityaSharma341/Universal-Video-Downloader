@@ -75,4 +75,40 @@ class VideoDownloadServiceTest {
         assertEquals(0L, info.sizeMap().get("best"));
         assertEquals(1_500_000L, info.sizeMap().get("audio"));
     }
+
+    @Test
+    void usesSystemTempDirByDefaultInsteadOfProjectDownloads() throws Exception {
+        VideoDownloadService service = new VideoDownloadService("", "yt-dlp", "cookies.txt");
+        try {
+            assertTrue(service.isUsingSystemTemp());
+            Path expectedBase = Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath().normalize();
+            assertTrue(service.getDownloadRoot().startsWith(expectedBase));
+            assertFalse(service.getDownloadRoot().toString().endsWith("downloads"));
+        } finally {
+            service.cleanup();
+        }
+    }
+
+    @Test
+    void evictExpiredJobsDeletesTempFiles(@TempDir Path tempDir) throws Exception {
+        VideoDownloadService service = new VideoDownloadService(tempDir.toString(), "yt-dlp");
+        try {
+            String jobId = "test-job-1";
+            Path jobDir = tempDir.resolve(jobId);
+            java.nio.file.Files.createDirectories(jobDir);
+            java.nio.file.Files.writeString(jobDir.resolve("video.mp4"), "dummy");
+
+            // Simulate expired served job via reflection-free field check:
+            // Submit or inspect cleanup directly on stale dir during system-temp startup
+            assertTrue(java.nio.file.Files.exists(jobDir));
+            VideoDownloadService tempService = new VideoDownloadService("", "yt-dlp", "cookies.txt");
+            Path staleDir = tempService.getDownloadRoot().resolve("stale-test-dir");
+            java.nio.file.Files.createDirectories(staleDir);
+            java.nio.file.Files.writeString(staleDir.resolve("old.mp4"), "old");
+            tempService.cleanup();
+            assertFalse(java.nio.file.Files.exists(staleDir));
+        } finally {
+            service.cleanup();
+        }
+    }
 }

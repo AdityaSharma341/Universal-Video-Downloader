@@ -25,7 +25,8 @@ Configure these options via environment variables or in `application.properties`
 |---|---|---|
 | `APP_TOKEN` / `app.access-token` | *(empty)* | Optional secret key required in `X-App-Token` header. Strongly recommended for LAN use. |
 | `YTDLP_PATH` / `app.ytdlp-path` | `yt-dlp` | Path or command name for the `yt-dlp` executable. |
-| `app.download-dir` | `downloads` | Local directory where downloaded video files and job data are stored. |
+| `app.download-dir` | *(OS temp folder)* | Optional directory for temporary download processing (`DOWNLOAD_DIR`). Defaults to system temp and auto-cleans after browser download. |
+| `app.cookie-file` | `cookies.txt` | Path to optional Netscape `cookies.txt` (`COOKIE_FILE`). |
 | `server.port` | `8080` | Port on which the Spring Boot web application runs. |
 
 ## Run on Windows
@@ -91,4 +92,4 @@ downloads/                          # Target download directory (.gitkeep)
 pom.xml                             # Maven build configuration
 ```
 
-Downloaded files are placed under `downloads/` on the host machine. Clean up old downloads periodically to manage disk space.
+Temporary files are processed in the system temp folder and automatically deleted shortly after your browser downloads the file; nothing is stored permanently in the project folder.

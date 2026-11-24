@@ -4,12 +4,14 @@ import java.nio.file.Path;
 
 public class DownloadJob {
     private final String id;
+    private final long createdAt = System.currentTimeMillis();
     private volatile String state = "queued";
     private volatile double percent = 0;
     private volatile String message = "Waiting to start...";
     private volatile String filename;
     private volatile Path file;
     private volatile Process process;
+    private volatile long downloadedAt = 0L;
 
     public DownloadJob(String id) {
         this.id = id;
@@ -17,6 +19,10 @@ public class DownloadJob {
 
     public String getId() {
         return id;
+    }
+
+    public long getCreatedAt() {
+        return createdAt;
     }
 
     public String getState() {
@@ -65,5 +71,13 @@ public class DownloadJob {
 
     public void setProcess(Process process) {
         this.process = process;
+    }
+
+    public long getDownloadedAt() {
+        return downloadedAt;
+    }
+
+    public void markDownloaded() {
+        this.downloadedAt = System.currentTimeMillis();
     }
 }

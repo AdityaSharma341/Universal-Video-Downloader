@@ -327,9 +327,12 @@ async function poll(id) {
                 activeJobId = null;
                 $('cancelDownload').classList.add('hide');
                 $('cancelDownload').disabled = false;
-                $('save').href = '/api/file/' + id + (token ? '?token=' + encodeURIComponent(token) : '');
+                let fileUrl = '/api/file/' + id + (token ? '?token=' + encodeURIComponent(token) : '');
+                $('save').href = fileUrl;
                 $('save').classList.remove('hide');
-                $('save').textContent = isAudio ? 'Save audio to this device' : 'Save to this device';
+                $('save').textContent = isAudio ? 'Download audio again' : 'Download again';
+                $('message').textContent = 'Download started! Check your browser downloads.';
+                triggerBrowserDownload(fileUrl);
                 resetDownloadButtons();
             } else if (d.state === 'cancelled') {
                 clearInterval(poller);
@@ -359,6 +362,14 @@ async function poll(id) {
     };
     await check();
     poller = setInterval(check, 700);
+}
+
+function triggerBrowserDownload(url) {
+    let frame = document.createElement('iframe');
+    frame.style.display = 'none';
+    frame.src = url;
+    document.body.appendChild(frame);
+    setTimeout(() => frame.remove(), 60000);
 }
 
 function resetDownloadButtons() {

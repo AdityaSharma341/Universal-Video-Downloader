@@ -107,9 +107,11 @@ public class VideoController {
         }
         Resource resource = new FileSystemResource(job.getFile());
         String filename = job.getFile().getFileName().toString();
+        long size = Files.size(job.getFile());
+        downloadService.markJobServed(id);
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                .contentLength(Files.size(job.getFile()))
+                .contentLength(size)
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.attachment().filename(filename, StandardCharsets.UTF_8).build().toString())
                 .body(resource);
