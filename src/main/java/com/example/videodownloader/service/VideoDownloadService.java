@@ -130,11 +130,13 @@ public class VideoDownloadService {
         return false;
     }
 
-    public Map<String, Object> fetchVideoInfo(String url, boolean useCookies, String browser) throws Exception {
+    /**
+     * Fetches video metadata including all available resolutions and audio info.
+     * Cookies are always used automatically: cookie file first, then browser fallback.
+     */
+    public Map<String, Object> fetchVideoInfo(String url, String browser) throws Exception {
         List<String> command = new ArrayList<>(List.of(ytDlpPath, "--dump-single-json", "--no-warnings", "--no-playlist"));
-        if (useCookies) {
-            addCookieArgs(command, browser);
-        }
+        addCookieArgs(command, browser);
         command.add(url);
 
         Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
@@ -154,31 +156,31 @@ public class VideoDownloadService {
         }
 
         if (process.exitValue() != 0) {
-            if (useCookies) {
-                Map<String, Object> retry = new LinkedHashMap<>();
-                retry.put("needsBrowser", true);
-                retry.put("browserUrl", url);
-                retry.put("errorDetail", safeMessage(output));
-                retry.put("hasCookieFile", hasCookieFile());
-                retry.put("cookieFilePath", cookieFilePath.toString());
-                retry.put("message", "Could not read browser cookies. Use the cookie file method below.");
-                return retry;
-            }
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, safeMessage(output));
         }
 
         JsonNode data = mapper.readTree(output);
+
+        // Collect all unique video heights from actual formats
         List<Integer> heights = new ArrayList<>();
+        boolean hasAudio = false;
         JsonNode formats = data.path("formats");
         if (formats.isArray()) {
             for (JsonNode format : formats) {
+                // Check video tracks
                 JsonNode height = format.get("height");
                 String vcodec = format.path("vcodec").asText("");
                 if (height != null && height.canConvertToInt() && !"none".equals(vcodec)) {
                     heights.add(height.asInt());
                 }
+                // Check audio tracks
+                String acodec = format.path("acodec").asText("");
+                if (!"none".equals(acodec)) {
+                    hasAudio = true;
+                }
             }
         }
+
         List<Integer> uniqueHeights = heights.stream().distinct().sorted(Comparator.reverseOrder()).toList();
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -187,40 +189,66 @@ public class VideoDownloadService {
         result.put("duration", data.path("duration").asInt(0));
         result.put("uploader", data.path("uploader").asText(data.path("channel").asText("Unknown creator")));
         result.put("qualities", uniqueHeights);
+        result.put("hasAudio", hasAudio);
         return result;
     }
 
-    public String submitDownloadJob(String url, String quality, boolean useCookies, String browser) {
+    /**
+     * Submits a download job. Mode can be "video" or "audio".
+     * Cookies are always used automatically.
+     */
+    public String submitDownloadJob(String url, String quality, String mode, String browser) {
         String id = UUID.randomUUID().toString();
         DownloadJob job = new DownloadJob(id);
         jobs.put(id, job);
-        executor.submit(() -> performDownload(job, url, quality, useCookies, browser));
+        executor.submit(() -> performDownload(job, url, quality, mode, browser));
         return id;
     }
 
-    private void performDownload(DownloadJob job, String url, String quality, boolean useCookies, String browser) {
+    private void performDownload(DownloadJob job, String url, String quality, String mode, String browser) {
         try {
             Path jobDir = downloadRoot.resolve(job.getId()).normalize();
             Files.createDirectories(jobDir);
-            String format = "best".equals(quality)
-                    ? "bv*+ba/b"
-                    : "bestvideo[height<=" + quality + "]+bestaudio/best[height<=" + quality + "]/best";
+
+            boolean audioOnly = "audio".equalsIgnoreCase(mode);
             String outputPattern = jobDir.resolve("%(title).120B [%(id)s].%(ext)s").toString();
 
-            List<String> command = new ArrayList<>(List.of(
-                    ytDlpPath, "--newline", "--no-warnings", "--no-playlist",
-                    "--format", format, "--merge-output-format", "mp4",
-                    "--output", outputPattern));
+            List<String> command = new ArrayList<>();
+            command.add(ytDlpPath);
+            command.add("--newline");
+            command.add("--no-warnings");
+            command.add("--no-playlist");
 
-            if (useCookies) {
-                addCookieArgs(command, browser);
+            if (audioOnly) {
+                // Audio-only: extract best audio → convert to mp3
+                command.addAll(List.of(
+                        "--extract-audio",
+                        "--audio-format", "mp3",
+                        "--audio-quality", "0",
+                        "--output", outputPattern
+                ));
+            } else {
+                // Video: use the user-selected quality
+                String format;
+                if ("best".equals(quality)) {
+                    format = "bv*+ba/b";
+                } else {
+                    format = "bestvideo[height<=" + quality + "]+bestaudio/best[height<=" + quality + "]/best";
+                }
+                command.addAll(List.of(
+                        "--format", format,
+                        "--merge-output-format", "mp4",
+                        "--output", outputPattern
+                ));
             }
+
+            addCookieArgs(command, browser);
             command.add(url);
 
             Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
             job.setProcess(process);
             job.setState("downloading");
-            job.setMessage("Downloading video...");
+            job.setMessage(audioOnly ? "Downloading audio..." : "Downloading video...");
 
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
@@ -231,10 +259,14 @@ public class VideoDownloadService {
                             job.setPercent(Math.min(99.0, Double.parseDouble(matcher.group(1))));
                         } catch (NumberFormatException ignored) {}
                     }
-                    if (line.toLowerCase(Locale.ROOT).contains("merging formats")
-                            || line.toLowerCase(Locale.ROOT).contains("already been downloaded")) {
+                    String lower = line.toLowerCase(Locale.ROOT);
+                    if (lower.contains("merging formats") || lower.contains("already been downloaded")) {
                         job.setState("processing");
-                        job.setMessage("Preparing video...");
+                        job.setMessage("Preparing file...");
+                    }
+                    if (lower.contains("converting") || lower.contains("extracting audio")) {
+                        job.setState("processing");
+                        job.setMessage("Converting to audio...");
                     }
                 }
             }
@@ -248,14 +280,14 @@ public class VideoDownloadService {
                 Path file = files.filter(Files::isRegularFile)
                         .filter(p -> !p.toString().endsWith(".part"))
                         .max(Comparator.comparingLong(p -> p.toFile().length()))
-                        .orElseThrow(() -> new IOException("No output video file was created. Check FFmpeg installation."));
+                        .orElseThrow(() -> new IOException("No output file was created. Check FFmpeg installation."));
                 job.setFile(file);
                 job.setFilename(file.getFileName().toString());
             }
 
             job.setPercent(100.0);
             job.setState("finished");
-            job.setMessage("Your video is ready.");
+            job.setMessage(audioOnly ? "Your audio is ready." : "Your video is ready.");
         } catch (Exception ex) {
             job.setState("error");
             job.setMessage(safeMessage(ex.getMessage()));
@@ -264,6 +296,10 @@ public class VideoDownloadService {
         }
     }
 
+    /**
+     * Adds cookie arguments to the yt-dlp command. Always called automatically.
+     * Priority: cookies.txt file (most reliable) → --cookies-from-browser (fallback).
+     */
     private void addCookieArgs(List<String> command, String browser) {
         if (hasCookieFile()) {
             command.add("--cookies");

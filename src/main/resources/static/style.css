@@ -36,55 +36,50 @@ dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);bo
 dialog::backdrop{background:#000a}
 dialog form{display:grid;gap:12px}
 
-/* Cookie toggle */
-.cookie-row{display:flex;align-items:center;gap:10px;margin-top:10px}
-.toggle{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:700}
-.toggle input[type="checkbox"]{width:18px;height:18px;accent-color:var(--a);cursor:pointer}
-.toggle-label{white-space:nowrap}
-.cookie-row>.hint{margin:0}
-
-/* Cookie options panel */
-.cookie-options{margin-top:14px;animation:slideDown .2s ease}
-@keyframes slideDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
-.cookie-status{padding:10px 14px;background:#0c1426;border-radius:10px;font-size:13px;margin-bottom:14px}
+/* ── Cookie bar (collapsed) ─────────────────────────────────────────── */
+.cookie-bar{display:flex;align-items:center;gap:10px;margin-top:12px;padding:10px 14px;background:#0c1426;border-radius:10px;font-size:12px}
+.cookie-indicator{flex:1}
 .cookie-ok{color:var(--b)}
-.cookie-none{color:var(--muted)}
+.cookie-auto{color:var(--muted)}
 .cookie-err{color:#ffc5d0}
-.cookie-methods{display:flex;flex-direction:column;gap:12px}
+.cookie-none{color:var(--muted)}
 
-/* Method cards */
+/* ── Cookie panel (expandable) ──────────────────────────────────────── */
+.cookie-panel{margin-top:12px;animation:slideDown .2s ease;display:flex;flex-direction:column;gap:12px}
+@keyframes slideDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── Method cards ───────────────────────────────────────────────────── */
 .method-card{background:#0c1426;border:1px solid var(--line);border-radius:14px;padding:16px}
 .method-card h4{margin:0 0 8px;font-size:14px;display:flex;align-items:center;gap:8px}
-.method-primary{border-color:var(--a);box-shadow:0 0 0 1px rgba(139,124,255,.15)}
 .badge{font-size:10px;font-weight:700;letter-spacing:1px;padding:3px 8px;border-radius:6px;background:var(--a);color:white}
 
-/* Steps */
-.steps{text-align:left;margin:10px 0;display:flex;flex-direction:column;gap:8px}
-.step{display:flex;align-items:center;gap:10px;font-size:13px;line-height:1.5}
-.step-num{flex-shrink:0;width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,var(--a),#5c8cff);display:grid;place-items:center;font-size:12px;font-weight:700}
-.step a{color:var(--b);text-decoration:underline}
-
-/* File upload */
-.upload-row{display:flex;gap:10px;align-items:center;margin-top:10px}
+/* ── File upload ────────────────────────────────────────────────────── */
+.upload-row{display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap}
 .file-input{display:none}
 .file-label{display:inline-flex;align-items:center;padding:10px 16px;background:#1a2744;border:1px dashed var(--line);border-radius:10px;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;transition:border-color .2s}
 .file-label:hover{border-color:var(--a);color:var(--text)}
 
-/* Browser selector row */
+/* ── Browser selector ───────────────────────────────────────────────── */
 .browser-row{display:flex;align-items:center;gap:10px;margin-top:8px}
 .browser-row select{width:auto;min-width:160px;padding:10px 14px}
 .browser-row label{margin-bottom:0}
-.warn{color:#ffc080;font-size:11px;margin-top:6px}
 
-/* Browser prompt */
-.browser-prompt{text-align:left}
-.browser-prompt>p{margin:6px 0}
+/* ── Mode toggle (Video/Audio) ──────────────────────────────────────── */
+.mode-section{margin-top:20px}
+.mode-toggle{display:flex;gap:0;border-radius:12px;overflow:hidden;border:1px solid var(--line);width:fit-content}
+.mode-btn{background:#0c1426;color:var(--muted);border:none;border-radius:0;padding:12px 24px;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:8px}
+.mode-btn:hover{background:#1a2744;color:var(--text)}
+.mode-btn.active{background:linear-gradient(110deg,#7969f5,#5d8cff);color:white}
+.mode-icon{font-size:16px}
 
-/* Small utility buttons */
+/* ── Audio info ─────────────────────────────────────────────────────── */
+.audio-info{margin:0;padding:6px 0;font-size:13px}
+
+/* ── Small utility buttons ──────────────────────────────────────────── */
 .btn-small{font-size:11px;padding:5px 12px;border-radius:7px}
 .btn-muted{background:#293650;color:var(--muted)}
-.btn-secondary{background:linear-gradient(110deg,#5ce1c2,#5d8cff)}
 
+/* ── Responsive ─────────────────────────────────────────────────────── */
 @media(max-width:600px){
     .hero{padding:52px 5px 28px}
     .hero h1{letter-spacing:-2px}
@@ -95,4 +90,6 @@ dialog form{display:grid;gap:12px}
     .preview img{width:100%}
     .browser-row{flex-direction:column;align-items:stretch}
     .browser-row select{width:100%}
+    .mode-toggle{width:100%}
+    .mode-btn{flex:1;justify-content:center}
 }

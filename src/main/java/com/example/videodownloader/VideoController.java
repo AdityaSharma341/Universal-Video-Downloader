@@ -17,7 +17,6 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.*;
@@ -53,20 +52,36 @@ public class VideoController {
         return downloadService.checkDiagnostics();
     }
 
+    /**
+     * Detect video info. Cookies are used automatically.
+     */
     @PostMapping("/info")
     public Map<String, Object> info(@RequestBody UrlRequest request, HttpServletRequest http) throws Exception {
         authorize(http.getHeader("X-App-Token"));
         String url = UrlValidator.validateAndNormalizeUrl(request.url());
-        return downloadService.fetchVideoInfo(url, request.useCookies(), UrlValidator.sanitizeBrowser(request.browser()));
+        String browser = UrlValidator.sanitizeBrowser(request.browser());
+        return downloadService.fetchVideoInfo(url, browser);
     }
 
+    /**
+     * Start download. Mode can be "video" (default) or "audio".
+     * Quality is a resolution height from the detected qualities, or "best".
+     * Cookies are used automatically.
+     */
     @PostMapping("/download")
     public Map<String, String> start(@RequestBody DownloadRequest request, HttpServletRequest http) {
         authorize(http.getHeader("X-App-Token"));
         String url = UrlValidator.validateAndNormalizeUrl(request.url());
-        String quality = UrlValidator.validateQuality(request.quality());
+        String quality = request.quality() == null ? "best" : request.quality();
+        String mode = request.mode() == null ? "video" : request.mode();
         String browser = UrlValidator.sanitizeBrowser(request.browser());
-        String id = downloadService.submitDownloadJob(url, quality, request.useCookies(), browser);
+
+        // For audio mode, quality is irrelevant
+        if ("audio".equalsIgnoreCase(mode)) {
+            quality = "best";
+        }
+
+        String id = downloadService.submitDownloadJob(url, quality, mode, browser);
         return Map.of("jobId", id);
     }
 
@@ -92,7 +107,7 @@ public class VideoController {
         authorize(token);
         DownloadJob job = getJob(id);
         if (!"finished".equals(job.getState()) || job.getFile() == null || !Files.isRegularFile(job.getFile())) {
-            throw new ResponseStatusException(NOT_FOUND, "The video is not ready.");
+            throw new ResponseStatusException(NOT_FOUND, "The file is not ready.");
         }
         Resource resource = new FileSystemResource(job.getFile());
         String filename = job.getFile().getFileName().toString();
@@ -102,25 +117,6 @@ public class VideoController {
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.attachment().filename(filename, StandardCharsets.UTF_8).build().toString())
                 .body(resource);
-    }
-
-    @PostMapping("/open-browser")
-    public Map<String, String> openBrowser(@RequestBody UrlRequest request, HttpServletRequest http) {
-        authorize(http.getHeader("X-App-Token"));
-        String url = UrlValidator.validateAndNormalizeUrl(request.url());
-        String browser = UrlValidator.sanitizeBrowser(request.browser());
-        try {
-            String exe = switch (browser) {
-                case "firefox" -> "firefox";
-                case "edge" -> "msedge";
-                case "brave" -> "brave";
-                default -> "chrome";
-            };
-            new ProcessBuilder("cmd", "/c", "start", exe, url.replace("&", "^&")).start();
-        } catch (IOException e) {
-            throw new ResponseStatusException(INTERNAL_SERVER_ERROR, "Could not open browser.");
-        }
-        return Map.of("status", "opened", "message", "Complete any prompts in the browser, then return here.");
     }
 
     @PostMapping("/upload-cookies")
@@ -157,21 +153,6 @@ public class VideoController {
     private DownloadJob getJob(String id) {
         return downloadService.findJob(id)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Download job not found."));
-    }
-
-    private String validateUrl(String value) {
-        if (value == null || value.isBlank() || value.length() > 4096) {
-            throw new ResponseStatusException(BAD_REQUEST, "Enter a valid webpage URL.");
-        }
-        try {
-            URI uri = URI.create(value.trim());
-            if (!Set.of("http", "https").contains(uri.getScheme()) || uri.getHost() == null) {
-                throw new IllegalArgumentException();
-            }
-            return uri.toString();
-        } catch (Exception ex) {
-            throw new ResponseStatusException(BAD_REQUEST, "Only valid http:// and https:// URLs are accepted.");
-        }
     }
 
     private void authorize(String supplied) {
