@@ -404,6 +404,10 @@ public class VideoDownloadService {
                             job.setState("processing");
                             job.setMessage("Converting to audio...");
                         }
+                        if (lower.contains("embedding thumbnail") || lower.contains("adding metadata")) {
+                            job.setState("processing");
+                            job.setMessage("Embedding thumbnail & tags...");
+                        }
                     }
                 }
 
@@ -431,7 +435,12 @@ public class VideoDownloadService {
 
             try (Stream<Path> files = Files.list(jobDir)) {
                 Path file = files.filter(Files::isRegularFile)
-                        .filter(p -> !p.toString().endsWith(".part"))
+                        .filter(p -> {
+                            String name = p.getFileName().toString().toLowerCase(Locale.ROOT);
+                            return !name.endsWith(".part") && !name.endsWith(".ytdl")
+                                    && !name.endsWith(".jpg") && !name.endsWith(".jpeg")
+                                    && !name.endsWith(".png") && !name.endsWith(".webp");
+                        })
                         .max(Comparator.comparingLong(p -> p.toFile().length()))
                         .orElseThrow(() -> new IOException("No output file was created. Check FFmpeg installation."));
                 job.setFile(file);
@@ -452,7 +461,7 @@ public class VideoDownloadService {
         }
     }
 
-    private List<String> buildDownloadCommand(String outputPattern, String quality, boolean audioOnly) {
+    List<String> buildDownloadCommand(String outputPattern, String quality, boolean audioOnly) {
         List<String> command = new ArrayList<>();
         command.add(ytDlpPath);
         command.add("--newline");
@@ -482,6 +491,9 @@ public class VideoDownloadService {
                     "--extract-audio",
                     "--audio-format", "mp3",
                     "--audio-quality", "0",
+                    "--embed-thumbnail",
+                    "--convert-thumbnails", "jpg",
+                    "--embed-metadata",
                     "--output", outputPattern));
         } else {
             String format = "best".equals(quality)

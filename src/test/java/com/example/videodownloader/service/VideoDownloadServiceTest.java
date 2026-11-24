@@ -111,4 +111,24 @@ class VideoDownloadServiceTest {
             service.cleanup();
         }
     }
+
+    @Test
+    void audioCommandEmbedsThumbnailAndMetadata(@TempDir Path tempDir) throws Exception {
+        VideoDownloadService service = new VideoDownloadService(tempDir.toString(), "yt-dlp");
+        try {
+            List<String> audioCmd = service.buildDownloadCommand("out.%(ext)s", "best", true);
+            assertTrue(audioCmd.contains("--extract-audio"));
+            assertTrue(audioCmd.contains("--embed-thumbnail"));
+            assertTrue(audioCmd.contains("--convert-thumbnails"));
+            assertTrue(audioCmd.contains("jpg"));
+            assertTrue(audioCmd.contains("--embed-metadata"));
+            assertTrue(audioCmd.contains("--concurrent-fragments"));
+
+            List<String> videoCmd = service.buildDownloadCommand("out.%(ext)s", "1080", false);
+            assertFalse(videoCmd.contains("--extract-audio"));
+            assertTrue(videoCmd.contains("bestvideo[height<=1080]+bestaudio/best[height<=1080]/best"));
+        } finally {
+            service.cleanup();
+        }
+    }
 }
