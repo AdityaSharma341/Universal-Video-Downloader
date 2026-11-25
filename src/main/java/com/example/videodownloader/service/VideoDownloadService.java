@@ -310,6 +310,7 @@ public class VideoDownloadService {
 
     private String runInfoWithAutoCookies(String url, String browser) throws Exception {
         List<List<String>> strategies = buildCookieStrategies(browser);
+        String firstOutput = "";
         String lastOutput = "";
         int lastExit = 1;
 
@@ -330,6 +331,9 @@ public class VideoDownloadService {
                 return output;
             }
 
+            if (i == 0) {
+                firstOutput = output;
+            }
             lastOutput = output;
             lastExit = process.exitValue();
 
@@ -340,7 +344,14 @@ public class VideoDownloadService {
         }
 
         if (lastExit != 0) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, safeMessage(lastOutput));
+            if (!hasCookieFile() && looksLikeCookieOrAuthIssue(firstOutput) && looksLikeMissingBrowserDb(lastOutput)) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "This site requires sign-in or bot verification from this server. Open 'Manage cookies' and upload a cookies.txt file.");
+            }
+            String bestError = (!hasCookieFile() && looksLikeMissingBrowserDb(lastOutput) && !firstOutput.isBlank())
+                    ? firstOutput
+                    : lastOutput;
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, safeMessage(bestError));
         }
         return lastOutput;
     }
@@ -548,12 +559,20 @@ public class VideoDownloadService {
                 || lower.contains("could not copy");
     }
 
+    private boolean looksLikeMissingBrowserDb(String output) {
+        if (output == null) return false;
+        String lower = output.toLowerCase(Locale.ROOT);
+        return lower.contains("could not find") && lower.contains("cookies database")
+                || lower.contains("unsupported") && lower.contains("browser");
+    }
+
     private String readProcessOutput(Process process) throws IOException {
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
             StringBuilder result = new StringBuilder();
             String line;
             while ((line = reader.readLine()) != null) {
+                if (!result.isEmpty()) result.append('\n');
                 result.append(line);
             }
             return result.toString();

@@ -231,6 +231,10 @@ async function detectVideo() {
         $('progress').classList.add('hide');
     } catch (e) {
         err(e.message);
+        if (/cookie|bot|sign[- ]?in|auth/i.test(e.message) && $('cookiePanel').classList.contains('hide')) {
+            $('cookiePanel').classList.remove('hide');
+            $('cookieToggle').textContent = 'Hide';
+        }
     } finally {
         $('detect').disabled = false;
         $('detect').textContent = 'Detect video';
