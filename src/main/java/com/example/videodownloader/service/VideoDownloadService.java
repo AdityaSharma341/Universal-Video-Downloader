@@ -561,6 +561,7 @@ public class VideoDownloadService {
 
         if (audioOnly) {
             command.addAll(List.of(
+                    "--format", "ba/b",
                     "--extract-audio",
                     "--audio-format", "mp3",
                     "--audio-quality", "0",
@@ -643,7 +644,9 @@ public class VideoDownloadService {
 
     private String safeMessage(String message) {
         if (message == null || message.isBlank()) return "The operation failed. Check the URL and try again.";
-        String trimmed = message.trim();
+        int errorIdx = message.indexOf("ERROR:");
+        String relevant = errorIdx >= 0 ? message.substring(errorIdx) : message;
+        String trimmed = relevant.trim();
         return trimmed.length() > 450 ? trimmed.substring(0, 450) : trimmed;
     }
 

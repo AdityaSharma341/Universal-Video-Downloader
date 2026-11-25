@@ -117,6 +117,7 @@ class VideoDownloadServiceTest {
         VideoDownloadService service = new VideoDownloadService(tempDir.toString(), "yt-dlp");
         try {
             List<String> audioCmd = service.buildDownloadCommand("out.%(ext)s", "best", true);
+            assertTrue(audioCmd.contains("ba/b"));
             assertTrue(audioCmd.contains("--extract-audio"));
             assertTrue(audioCmd.contains("--embed-thumbnail"));
             assertTrue(audioCmd.contains("--convert-thumbnails"));
