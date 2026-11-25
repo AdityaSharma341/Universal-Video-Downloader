@@ -1,0 +1,11 @@
+target/
+.git/
+.github/
+.idea/
+.vscode/
+downloads/
+*.iml
+cookies.txt
+auto-commit.sh
+activity.txt
+*.log
