@@ -36,6 +36,7 @@ public class VideoDownloadService {
     private static final int CONCURRENT_FRAGMENTS = 8;
     private static final long SERVED_CLEANUP_DELAY_MS = 60_000L;
     private static final long UNSERVED_EXPIRY_MS = 15 * 60_000L;
+    private static final Path RENDER_SECRET_COOKIE = Paths.get("/etc/secrets/cookies.txt");
 
     private final ObjectMapper mapper = new ObjectMapper();
     private final ConcurrentMap<String, DownloadJob> jobs = new ConcurrentHashMap<>();
@@ -109,7 +110,13 @@ public class VideoDownloadService {
     public Path getDownloadRoot() { return downloadRoot; }
     public boolean isUsingSystemTemp() { return usingSystemTemp; }
     public Path getCookieFilePath() { return cookieFilePath; }
-    public boolean hasCookieFile() { return Files.isRegularFile(cookieFilePath); }
+    public boolean hasCookieFile() {
+        return Files.isRegularFile(cookieFilePath) || Files.isRegularFile(RENDER_SECRET_COOKIE);
+    }
+
+    private Path resolveActiveCookieFile() {
+        return Files.isRegularFile(cookieFilePath) ? cookieFilePath : RENDER_SECRET_COOKIE;
+    }
 
     public void saveCookies(byte[] content) throws IOException {
         Files.write(cookieFilePath, content);
@@ -556,7 +563,7 @@ public class VideoDownloadService {
      */
     private List<List<String>> buildCookieStrategies(String browser) {
         if (hasCookieFile()) {
-            return List.of(List.of("--cookies", cookieFilePath.toString()));
+            return List.of(List.of("--cookies", resolveActiveCookieFile().toString()));
         }
         List<List<String>> strategies = new ArrayList<>();
         strategies.add(List.of()); // Try direct without cookies first
