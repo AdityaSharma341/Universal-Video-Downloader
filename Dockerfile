@@ -14,14 +14,14 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg \
-        python3 \
-        nodejs \
         unzip \
         curl \
         ca-certificates \
     && curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh \
-    && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
+    && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o /usr/local/bin/yt-dlp \
     && chmod a+rx /usr/local/bin/yt-dlp \
+    && deno --version \
+    && yt-dlp --version \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/target/universal-video-downloader-1.0.0.jar app.jar

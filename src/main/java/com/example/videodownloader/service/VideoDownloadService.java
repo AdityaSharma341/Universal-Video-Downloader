@@ -361,7 +361,7 @@ public class VideoDownloadService {
         for (int i = 0; i < strategies.size(); i++) {
             List<String> command = new ArrayList<>(List.of(
                     ytDlpPath, "--dump-single-json", "--no-warnings", "--no-playlist",
-                    "--js-runtimes", "node", "--remote-components", "ejs:github"));
+                    "--remote-components", "ejs:github"));
             command.addAll(strategies.get(i));
             command.add(url);
 
@@ -381,6 +381,21 @@ public class VideoDownloadService {
             }
             lastOutput = output;
             lastExit = process.exitValue();
+
+            // Retry with alternate YouTube player clients if format list came back empty
+            if (output.toLowerCase(Locale.ROOT).contains("requested format is not available")) {
+                List<String> fallbackCmd = new ArrayList<>(List.of(
+                        ytDlpPath, "--dump-single-json", "--no-warnings", "--no-playlist",
+                        "--remote-components", "ejs:github",
+                        "--extractor-args", "youtube:player_client=tv,web_safari,mweb"));
+                fallbackCmd.addAll(strategies.get(i));
+                fallbackCmd.add(url);
+                Process fbProc = new ProcessBuilder(fallbackCmd).redirectErrorStream(true).start();
+                String fbOutput = readProcessOutput(fbProc);
+                if (fbProc.waitFor(90, TimeUnit.SECONDS) && fbProc.exitValue() == 0) {
+                    return fbOutput;
+                }
+            }
 
             // Only retry with next cookie strategy if error relates to auth/cookies/bot-check
             if (i == 0 && !hasCookieFile() && !looksLikeCookieOrAuthIssue(output)) {
@@ -523,8 +538,6 @@ public class VideoDownloadService {
         command.add("--newline");
         command.add("--no-warnings");
         command.add("--no-playlist");
-        command.add("--js-runtimes");
-        command.add("node");
         command.add("--remote-components");
         command.add("ejs:github");
 
