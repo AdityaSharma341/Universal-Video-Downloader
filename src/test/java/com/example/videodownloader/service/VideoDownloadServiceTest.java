@@ -123,6 +123,8 @@ class VideoDownloadServiceTest {
             assertTrue(audioCmd.contains("jpg"));
             assertTrue(audioCmd.contains("--embed-metadata"));
             assertTrue(audioCmd.contains("--concurrent-fragments"));
+            assertTrue(audioCmd.contains("--remote-components"));
+            assertTrue(audioCmd.contains("ejs:github"));
 
             List<String> videoCmd = service.buildDownloadCommand("out.%(ext)s", "1080", false);
             assertFalse(videoCmd.contains("--extract-audio"));

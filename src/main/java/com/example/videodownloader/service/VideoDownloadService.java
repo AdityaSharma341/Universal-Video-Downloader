@@ -359,8 +359,9 @@ public class VideoDownloadService {
         int lastExit = 1;
 
         for (int i = 0; i < strategies.size(); i++) {
-            List<String> command = new ArrayList<>(
-                    List.of(ytDlpPath, "--dump-single-json", "--no-warnings", "--no-playlist"));
+            List<String> command = new ArrayList<>(List.of(
+                    ytDlpPath, "--dump-single-json", "--no-warnings", "--no-playlist",
+                    "--js-runtimes", "node", "--remote-components", "ejs:github"));
             command.addAll(strategies.get(i));
             command.add(url);
 
@@ -522,6 +523,10 @@ public class VideoDownloadService {
         command.add("--newline");
         command.add("--no-warnings");
         command.add("--no-playlist");
+        command.add("--js-runtimes");
+        command.add("node");
+        command.add("--remote-components");
+        command.add("ejs:github");
 
         // ── Speed optimizations ────────────────────────────────────────
         // Download 8 fragments in parallel for DASH/HLS streams
