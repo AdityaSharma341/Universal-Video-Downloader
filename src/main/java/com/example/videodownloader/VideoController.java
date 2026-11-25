@@ -19,6 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.time.Instant;
 import java.util.*;
 
 import static org.springframework.http.HttpStatus.*;
@@ -35,6 +36,17 @@ public class VideoController {
             @Value("${app.access-token:}") String accessToken) {
         this.downloadService = downloadService;
         this.accessToken = accessToken == null ? "" : accessToken;
+    }
+
+    /**
+     * Lightweight public endpoint for uptime monitors (supports GET and HEAD).
+     */
+    @GetMapping("/health")
+    public Map<String, Object> health() {
+        return Map.of(
+                "status", "UP",
+                "timestamp", Instant.now().toString()
+        );
     }
 
     @GetMapping("/config")

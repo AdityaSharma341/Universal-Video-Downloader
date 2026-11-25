@@ -26,6 +26,17 @@ class VideoControllerTest {
     private VideoDownloadService downloadService;
 
     @Test
+    void healthEndpointReturnsUpForGetAndHead() throws Exception {
+        mockMvc.perform(get("/api/health"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UP"))
+                .andExpect(jsonPath("$.timestamp").isNotEmpty());
+
+        mockMvc.perform(head("/api/health"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void configEndpointReturnsDefaults() throws Exception {
         when(downloadService.hasCookieFile()).thenReturn(false);
         when(downloadService.getCookieFilePath()).thenReturn(Path.of("cookies.txt"));
