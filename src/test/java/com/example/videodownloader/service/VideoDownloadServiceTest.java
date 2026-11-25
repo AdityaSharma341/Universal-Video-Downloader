@@ -131,4 +131,32 @@ class VideoDownloadServiceTest {
             service.cleanup();
         }
     }
+
+    @Test
+    void seedsCookieFileFromBase64AndTextEnvVars(@TempDir Path tempDir) throws Exception {
+        String sampleCookies = "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tabc\n";
+        String b64 = java.util.Base64.getEncoder().encodeToString(
+                sampleCookies.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        Path b64Target = tempDir.resolve("sub/cookies-b64.txt");
+        VideoDownloadService s1 = new VideoDownloadService(
+                tempDir.toString(), "yt-dlp", b64Target.toString(), b64, "");
+        try {
+            assertTrue(s1.hasCookieFile());
+            assertEquals(sampleCookies, java.nio.file.Files.readString(b64Target));
+        } finally {
+            s1.cleanup();
+        }
+
+        Path txtTarget = tempDir.resolve("cookies-txt.txt");
+        String escaped = "# Netscape HTTP Cookie File\\n.youtube.com\\tTRUE\\t/\\tTRUE\\t0\\tSID\\tabc\\n";
+        VideoDownloadService s2 = new VideoDownloadService(
+                tempDir.toString(), "yt-dlp", txtTarget.toString(), "", escaped);
+        try {
+            assertTrue(s2.hasCookieFile());
+            assertEquals(sampleCookies, java.nio.file.Files.readString(txtTarget));
+        } finally {
+            s2.cleanup();
+        }
+    }
 }

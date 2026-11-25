@@ -52,14 +52,20 @@ public class VideoDownloadService {
     private final Path cookieFilePath;
 
     public VideoDownloadService(String downloadDir, String ytDlpPath) throws IOException {
-        this(downloadDir, ytDlpPath, "cookies.txt");
+        this(downloadDir, ytDlpPath, "cookies.txt", "", "");
+    }
+
+    public VideoDownloadService(String downloadDir, String ytDlpPath, String cookieFile) throws IOException {
+        this(downloadDir, ytDlpPath, cookieFile, "", "");
     }
 
     @Autowired
     public VideoDownloadService(
             @Value("${app.download-dir:}") String downloadDir,
             @Value("${app.ytdlp-path:yt-dlp}") String ytDlpPath,
-            @Value("${app.cookie-file:cookies.txt}") String cookieFile) throws IOException {
+            @Value("${app.cookie-file:cookies.txt}") String cookieFile,
+            @Value("${app.cookies-b64:}") String cookiesB64,
+            @Value("${app.cookies-txt:}") String cookiesTxt) throws IOException {
         this.usingSystemTemp = (downloadDir == null || downloadDir.isBlank());
         this.downloadRoot = this.usingSystemTemp
                 ? Paths.get(System.getProperty("java.io.tmpdir"), "videodrop-temp").toAbsolutePath().normalize()
@@ -72,8 +78,32 @@ public class VideoDownloadService {
 
         this.ytDlpPath = ytDlpPath;
         this.cookieFilePath = Paths.get(cookieFile).toAbsolutePath().normalize();
+        seedCookiesFromEnvIfAbsent(cookiesB64, cookiesTxt);
 
         this.cleanupScheduler.scheduleWithFixedDelay(this::evictExpiredJobs, 30, 30, TimeUnit.SECONDS);
+    }
+
+    private void seedCookiesFromEnvIfAbsent(String cookiesB64, String cookiesTxt) throws IOException {
+        if (Files.isRegularFile(cookieFilePath)) {
+            return;
+        }
+        if (cookiesB64 != null && !cookiesB64.isBlank()) {
+            byte[] decoded = Base64.getMimeDecoder().decode(cookiesB64.trim());
+            if (cookieFilePath.getParent() != null) {
+                Files.createDirectories(cookieFilePath.getParent());
+            }
+            Files.write(cookieFilePath, decoded);
+            return;
+        }
+        if (cookiesTxt != null && !cookiesTxt.isBlank()) {
+            String normalized = (!cookiesTxt.contains("\n") && cookiesTxt.contains("\\n"))
+                    ? cookiesTxt.replace("\\n", "\n").replace("\\t", "\t")
+                    : cookiesTxt;
+            if (cookieFilePath.getParent() != null) {
+                Files.createDirectories(cookieFilePath.getParent());
+            }
+            Files.writeString(cookieFilePath, normalized, StandardCharsets.UTF_8);
+        }
     }
 
     public Path getDownloadRoot() { return downloadRoot; }

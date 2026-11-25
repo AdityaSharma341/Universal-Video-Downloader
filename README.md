@@ -27,6 +27,8 @@ Configure these options via environment variables or in `application.properties`
 | `YTDLP_PATH` / `app.ytdlp-path` | `yt-dlp` | Path or command name for the `yt-dlp` executable. |
 | `app.download-dir` | *(OS temp folder)* | Optional directory for temporary download processing (`DOWNLOAD_DIR`). Defaults to system temp and auto-cleans after browser download. |
 | `app.cookie-file` | `cookies.txt` | Path to optional Netscape `cookies.txt` (`COOKIE_FILE`). |
+| `COOKIES_B64` / `app.cookies-b64` | *(empty)* | Base64-encoded `cookies.txt` written automatically on startup (ideal for cloud hosts like Render). |
+| `COOKIES_TXT` / `app.cookies-txt` | *(empty)* | Raw Netscape `cookies.txt` content written automatically on startup if `COOKIES_B64` is not set. |
 | `server.port` | `8080` | Port on which the Spring Boot web application runs. |
 
 ## Run on Windows
