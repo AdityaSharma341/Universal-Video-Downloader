@@ -104,6 +104,13 @@ public class VideoDownloadService {
                 Files.createDirectories(cookieFilePath.getParent());
             }
             Files.writeString(cookieFilePath, normalized, StandardCharsets.UTF_8);
+            return;
+        }
+        if (Files.isRegularFile(RENDER_SECRET_COOKIE)) {
+            if (cookieFilePath.getParent() != null) {
+                Files.createDirectories(cookieFilePath.getParent());
+            }
+            Files.copy(RENDER_SECRET_COOKIE, cookieFilePath, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 
